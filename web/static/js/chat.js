@@ -286,7 +286,13 @@ class DualChat2Cart {
         if (toolCall.tool_name !== 'view_cart' && toolCall.tool_name !== 'checkout') {
             const paramsDiv = document.createElement('div');
             paramsDiv.className = 'tool-call-params';
-            paramsDiv.innerHTML = '<strong>Parameters:</strong> ' + this.formatFunctionParams(toolCall.tool_name, toolCall.result);
+            let params = {};
+            try {
+                params = JSON.parse(toolCall.arguments || '{}');
+            } catch (e) {
+                params = { error: 'Could not parse arguments' };
+            }
+            paramsDiv.innerHTML = '<strong>Parameters:</strong><pre>' + JSON.stringify(params, null, 2) + '</pre>';
             contentDiv.appendChild(paramsDiv);
         }
         
@@ -294,7 +300,11 @@ class DualChat2Cart {
         const resultDiv = document.createElement('div');
         resultDiv.className = 'tool-call-result';
         if (toolCall.success) {
-            resultDiv.innerHTML = '<strong>Result:</strong> ' + this.formatFunctionResult(toolCall);
+            let resultContent = toolCall.result;
+            if (typeof resultContent === 'object') {
+                resultContent = JSON.stringify(resultContent, null, 2);
+            }
+            resultDiv.innerHTML = '<strong>Result:</strong><pre>' + resultContent + '</pre>';
         } else {
             resultDiv.innerHTML = '<strong>Error:</strong> ' + toolCall.error;
         }

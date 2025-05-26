@@ -1,8 +1,10 @@
 package handlers
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"chat2cart/internal/models"
@@ -17,6 +19,7 @@ type ChatHandler struct {
 	productService *services.ProductService
 	cartService    *services.CartService
 	sessions       map[string]*models.ChatSession
+	sessionsMutex  sync.RWMutex
 }
 
 // NewChatHandler creates a new chat handler
@@ -26,6 +29,7 @@ func NewChatHandler(aiService *services.AIService, productService *services.Prod
 		productService: productService,
 		cartService:    cartService,
 		sessions:       make(map[string]*models.ChatSession),
+		sessionsMutex:  sync.RWMutex{},
 	}
 }
 
@@ -111,7 +115,13 @@ func (h *ChatHandler) PostMessageStream(c *gin.Context) {
 
 	// Send final response with cart summary
 	if response.CartSummary != nil {
-		fmt.Fprintf(c.Writer, "data: [CART_UPDATE] %v\n\n", response.CartSummary)
+		cartJSON, err := json.Marshal(response.CartSummary)
+		if err != nil {
+			fmt.Fprintf(c.Writer, "data: [ERROR] Failed to marshal cart update: %s\n\n", err.Error())
+			c.Writer.Flush()
+			return
+		}
+		fmt.Fprintf(c.Writer, "data: [CART_UPDATE] %s\n\n", string(cartJSON))
 		c.Writer.Flush()
 	}
 
@@ -269,11 +279,25 @@ func (h *ChatHandler) Checkout(c *gin.Context) {
 // Helper methods
 
 func (h *ChatHandler) getOrCreateSession(sessionID string) *models.ChatSession {
-	if session, exists := h.sessions[sessionID]; exists {
+	// First try to get the session with a read lock
+	h.sessionsMutex.RLock()
+	session, exists := h.sessions[sessionID]
+	h.sessionsMutex.RUnlock()
+
+	if exists {
 		return session
 	}
 
-	session := models.NewChatSession(sessionID)
+	// If session doesn't exist, acquire write lock to create it
+	h.sessionsMutex.Lock()
+	defer h.sessionsMutex.Unlock()
+
+	// Double check after acquiring write lock
+	if session, exists = h.sessions[sessionID]; exists {
+		return session
+	}
+
+	session = models.NewChatSession(sessionID)
 	h.sessions[sessionID] = session
 	return session
 }

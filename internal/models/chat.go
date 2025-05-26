@@ -90,10 +90,11 @@ type ChatResponse struct {
 
 // ToolCallResult represents the result of a tool call
 type ToolCallResult struct {
-	ToolName string      `json:"tool_name"`
-	Success  bool        `json:"success"`
-	Result   interface{} `json:"result,omitempty"`
-	Error    string      `json:"error,omitempty"`
+	ToolName  string      `json:"tool_name"`
+	Success   bool        `json:"success"`
+	Result    interface{} `json:"result,omitempty"`
+	Error     string      `json:"error,omitempty"`
+	Arguments string      `json:"arguments,omitempty"`
 }
 
 // generateID generates a simple ID (in a real app, you'd use UUID)

@@ -268,7 +268,7 @@ Guidelines:
 - Help users understand their cart contents and totals
 - Guide users through the checkout process
 
-Available product categories: electronics, clothing, books, home, sports, beauty, toys, food
+Available product categories: electronics, clothing, books, home, sports
 
 When users ask about products, use the search_products tool to find relevant items. When they want to add items to their cart, use the appropriate cart management tools.`
 }
@@ -416,9 +416,10 @@ func (ai *AIService) executeToolCall(ctx context.Context, toolCall openai.ChatCo
 		return ai.handleCheckout(sessionID)
 	default:
 		return models.ToolCallResult{
-			ToolName: functionName,
-			Success:  false,
-			Error:    fmt.Sprintf("Unknown tool: %s", functionName),
+			ToolName:  functionName,
+			Success:   false,
+			Error:     fmt.Sprintf("Unknown tool: %s", functionName),
+			Arguments: arguments,
 		}
 	}
 }
@@ -433,9 +434,10 @@ func (ai *AIService) handleSearchProducts(arguments string) models.ToolCallResul
 
 	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
 		return models.ToolCallResult{
-			ToolName: "search_products",
-			Success:  false,
-			Error:    "Invalid arguments",
+			ToolName:  "search_products",
+			Success:   false,
+			Error:     "Invalid arguments",
+			Arguments: arguments,
 		}
 	}
 
@@ -452,16 +454,18 @@ func (ai *AIService) handleSearchProducts(arguments string) models.ToolCallResul
 	results, err := ai.productService.SearchProducts(filter)
 	if err != nil {
 		return models.ToolCallResult{
-			ToolName: "search_products",
-			Success:  false,
-			Error:    err.Error(),
+			ToolName:  "search_products",
+			Success:   false,
+			Error:     err.Error(),
+			Arguments: arguments,
 		}
 	}
 
 	return models.ToolCallResult{
-		ToolName: "search_products",
-		Success:  true,
-		Result:   results,
+		ToolName:  "search_products",
+		Success:   true,
+		Result:    results,
+		Arguments: arguments,
 	}
 }
 
@@ -473,9 +477,10 @@ func (ai *AIService) handleAddToCart(arguments string, sessionID string) models.
 
 	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
 		return models.ToolCallResult{
-			ToolName: "add_to_cart",
-			Success:  false,
-			Error:    "Invalid arguments",
+			ToolName:  "add_to_cart",
+			Success:   false,
+			Error:     "Invalid arguments",
+			Arguments: arguments,
 		}
 	}
 
@@ -486,16 +491,18 @@ func (ai *AIService) handleAddToCart(arguments string, sessionID string) models.
 	cartSummary, err := ai.cartService.AddProductByName(sessionID, args.ProductName, args.Quantity)
 	if err != nil {
 		return models.ToolCallResult{
-			ToolName: "add_to_cart",
-			Success:  false,
-			Error:    err.Error(),
+			ToolName:  "add_to_cart",
+			Success:   false,
+			Error:     err.Error(),
+			Arguments: arguments,
 		}
 	}
 
 	return models.ToolCallResult{
-		ToolName: "add_to_cart",
-		Success:  true,
-		Result:   cartSummary,
+		ToolName:  "add_to_cart",
+		Success:   true,
+		Result:    cartSummary,
+		Arguments: arguments,
 	}
 }
 
@@ -506,34 +513,38 @@ func (ai *AIService) handleRemoveFromCart(arguments string, sessionID string) mo
 
 	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
 		return models.ToolCallResult{
-			ToolName: "remove_from_cart",
-			Success:  false,
-			Error:    "Invalid arguments",
+			ToolName:  "remove_from_cart",
+			Success:   false,
+			Error:     "Invalid arguments",
+			Arguments: arguments,
 		}
 	}
 
 	cartSummary, err := ai.cartService.RemoveFromCart(sessionID, args.ProductID)
 	if err != nil {
 		return models.ToolCallResult{
-			ToolName: "remove_from_cart",
-			Success:  false,
-			Error:    err.Error(),
+			ToolName:  "remove_from_cart",
+			Success:   false,
+			Error:     err.Error(),
+			Arguments: arguments,
 		}
 	}
 
 	return models.ToolCallResult{
-		ToolName: "remove_from_cart",
-		Success:  true,
-		Result:   cartSummary,
+		ToolName:  "remove_from_cart",
+		Success:   true,
+		Result:    cartSummary,
+		Arguments: arguments,
 	}
 }
 
 func (ai *AIService) handleViewCart(sessionID string) models.ToolCallResult {
 	cartSummary := ai.cartService.GetCartSummary(sessionID)
 	return models.ToolCallResult{
-		ToolName: "view_cart",
-		Success:  true,
-		Result:   cartSummary,
+		ToolName:  "view_cart",
+		Success:   true,
+		Result:    cartSummary,
+		Arguments: "{}",
 	}
 }
 
@@ -545,25 +556,28 @@ func (ai *AIService) handleUpdateQuantity(arguments string, sessionID string) mo
 
 	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
 		return models.ToolCallResult{
-			ToolName: "update_quantity",
-			Success:  false,
-			Error:    "Invalid arguments",
+			ToolName:  "update_quantity",
+			Success:   false,
+			Error:     "Invalid arguments",
+			Arguments: arguments,
 		}
 	}
 
 	cartSummary, err := ai.cartService.UpdateQuantity(sessionID, args.ProductID, args.Quantity)
 	if err != nil {
 		return models.ToolCallResult{
-			ToolName: "update_quantity",
-			Success:  false,
-			Error:    err.Error(),
+			ToolName:  "update_quantity",
+			Success:   false,
+			Error:     err.Error(),
+			Arguments: arguments,
 		}
 	}
 
 	return models.ToolCallResult{
-		ToolName: "update_quantity",
-		Success:  true,
-		Result:   cartSummary,
+		ToolName:  "update_quantity",
+		Success:   true,
+		Result:    cartSummary,
+		Arguments: arguments,
 	}
 }
 
@@ -571,16 +585,18 @@ func (ai *AIService) handleCheckout(sessionID string) models.ToolCallResult {
 	checkoutResult, err := ai.cartService.CheckoutCart(sessionID)
 	if err != nil {
 		return models.ToolCallResult{
-			ToolName: "checkout",
-			Success:  false,
-			Error:    err.Error(),
+			ToolName:  "checkout",
+			Success:   false,
+			Error:     err.Error(),
+			Arguments: "{}",
 		}
 	}
 
 	return models.ToolCallResult{
-		ToolName: "checkout",
-		Success:  true,
-		Result:   checkoutResult,
+		ToolName:  "checkout",
+		Success:   true,
+		Result:    checkoutResult,
+		Arguments: "{}",
 	}
 }
 
