@@ -25,36 +25,49 @@ type AIService struct {
 	cartService    *CartService
 }
 
+type loggingReadCloser struct {
+	io.ReadCloser
+	buf *bytes.Buffer
+}
+
+func (lrc *loggingReadCloser) Read(p []byte) (int, error) {
+	n, err := lrc.ReadCloser.Read(p)
+	if n > 0 {
+		lrc.buf.Write(p[:n])
+	}
+	return n, err
+}
+
 func Logger(req *http.Request, next option.MiddlewareNext) (res *http.Response, err error) {
-	// Before the request
 	start := time.Now()
 
-	// Read and log the request body
 	var bodyBytes []byte
 	if req.Body != nil {
 		bodyBytes, _ = io.ReadAll(req.Body)
-		// Restore the body for subsequent reads
 		req.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 	}
 
-	// Log the request
 	log.Printf("Request: %s %s %s", req.Method, req.URL.Path, string(bodyBytes))
 
-	// Forward the request to the next handler
 	res, err = next(req)
 
-	// Handle stuff after the request
 	end := time.Now()
 
-	// Read and log the response body
-	var responseBody []byte
-	if res != nil && res.Body != nil {
-		responseBody, _ = io.ReadAll(res.Body)
-		// Restore the response body for subsequent reads
-		res.Body = io.NopCloser(bytes.NewBuffer(responseBody))
-	}
+	if res != nil && res.Body != nil && strings.Contains(res.Header.Get("Content-Type"), "text/event-stream") {
+		// Don't buffer, just log as it streams
+		buf := new(bytes.Buffer)
+		res.Body = &loggingReadCloser{ReadCloser: res.Body, buf: buf}
 
-	log.Printf("Response: %s %s %s\nBody: %s", res.Status, req.URL.Path, end.Sub(start), string(responseBody))
+		go func() {
+			// Wait until the body is fully consumed
+			<-req.Context().Done()
+			log.Printf("Response: %s %s %s\nBody: %s", res.Status, req.URL.Path, end.Sub(start), buf.String())
+		}()
+	} else if res != nil && res.Body != nil {
+		responseBody, _ := io.ReadAll(res.Body)
+		res.Body = io.NopCloser(bytes.NewBuffer(responseBody))
+		log.Printf("Response: %s %s %s\nBody: %s", res.Status, req.URL.Path, end.Sub(start), string(responseBody))
+	}
 
 	return res, err
 }
@@ -132,19 +145,24 @@ func (ai *AIService) ProcessChatMessage(ctx context.Context, message, sessionID 
 
 // StreamChatMessage processes a chat message and streams the response
 func (ai *AIService) StreamChatMessage(ctx context.Context, message, sessionID string, session *models.ChatSession, writer func(string)) (*models.ChatResponse, error) {
+	// Define the tools available to the AI
+	tools := ai.getToolDefinitions()
+
 	// Build messages including conversation history
 	messages := ai.buildMessagesFromSession(session)
 
-	// Create the streaming chat completion request without tools for now
-	// This is because OpenAI streaming with tool calls is complex and requires special handling
+	// Create the streaming chat completion request with tools
 	stream := ai.client.Chat.Completions.NewStreaming(ctx, openai.ChatCompletionNewParams{
 		Model:       openai.ChatModelGPT4o,
 		Messages:    messages,
+		Tools:       tools,
 		Temperature: param.Opt[float64]{Value: 0.00000000000001},
 	})
 
 	var responseMessage strings.Builder
 	var created int64
+	var toolCalls []openai.ChatCompletionMessageToolCall
+	var toolCallID string
 
 	// Process the stream
 	for stream.Next() {
@@ -156,8 +174,34 @@ func (ai *AIService) StreamChatMessage(ctx context.Context, message, sessionID s
 
 			// Handle content streaming
 			if choice.Delta.Content != "" {
-				responseMessage.WriteString(choice.Delta.Content)
-				writer(choice.Delta.Content)
+				content := choice.Delta.Content
+				responseMessage.WriteString(content)
+				// Write each token immediately
+				writer(content)
+			}
+
+			// Handle tool calls
+			if len(choice.Delta.ToolCalls) > 0 {
+				for _, toolCall := range choice.Delta.ToolCalls {
+					if toolCallID == "" {
+						toolCallID = toolCall.ID
+						toolCalls = append(toolCalls, openai.ChatCompletionMessageToolCall{
+							ID: toolCall.ID,
+							Function: openai.ChatCompletionMessageToolCallFunction{
+								Name:      toolCall.Function.Name,
+								Arguments: toolCall.Function.Arguments,
+							},
+						})
+					} else {
+						// Append to existing tool call
+						for i, existingCall := range toolCalls {
+							if existingCall.ID == toolCall.ID {
+								toolCalls[i].Function.Arguments += toolCall.Function.Arguments
+								break
+							}
+						}
+					}
+				}
 			}
 		}
 	}
@@ -167,47 +211,32 @@ func (ai *AIService) StreamChatMessage(ctx context.Context, message, sessionID s
 	}
 
 	finalMessage := responseMessage.String()
-
-	// For streaming, we'll handle tool calls in a second pass if needed
-	// Check if the message suggests tool usage and handle it
-	cartSummary := ai.cartService.GetCartSummary(sessionID)
 	var toolResults []models.ToolCallResult
+	var cartSummary *models.CartSummary
 
-	// Simple tool detection - in a real implementation, you'd want more sophisticated parsing
-	if strings.Contains(strings.ToLower(finalMessage), "search") ||
-		strings.Contains(strings.ToLower(finalMessage), "add") ||
-		strings.Contains(strings.ToLower(finalMessage), "cart") {
+	// Execute tool calls if any were received
+	if len(toolCalls) > 0 {
 		writer("\n\n🔧 Processing tools...")
+		toolResults, err := ai.executeToolCalls(ctx, toolCalls, sessionID)
+		if err != nil {
+			log.Printf("Error executing tool calls: %v", err)
+		} else {
+			cartSummary = ai.cartService.GetCartSummary(sessionID)
 
-		// Make a second call with tools to handle any actions
-		toolCompletion, err := ai.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
-			Model: openai.ChatModelGPT4o,
-			Messages: []openai.ChatCompletionMessageParamUnion{
-				openai.SystemMessage(ai.getSystemPrompt()),
-				openai.UserMessage(message),
-			},
-			Tools: ai.getToolDefinitions(),
-		})
-
-		if err == nil && len(toolCompletion.Choices) > 0 && len(toolCompletion.Choices[0].Message.ToolCalls) > 0 {
-			toolResults, err = ai.executeToolCalls(ctx, toolCompletion.Choices[0].Message.ToolCalls, sessionID)
-			if err != nil {
-				log.Printf("Error executing tool calls: %v", err)
-			} else {
-				cartSummary = ai.cartService.GetCartSummary(sessionID)
-
-				if len(toolResults) > 0 {
-					writer("\n\n💭 Generating response...")
-					followUpCompletion, err := ai.createFollowUpResponse(ctx, message, toolResults, cartSummary)
-					if err != nil {
-						log.Printf("Error creating follow-up response: %v", err)
-					} else {
-						writer("\n\n" + followUpCompletion)
-						finalMessage = finalMessage + "\n\n" + followUpCompletion
-					}
+			if len(toolResults) > 0 {
+				writer("\n\n💭 Generating response...")
+				followUpCompletion, err := ai.createFollowUpResponse(ctx, message, toolResults, cartSummary)
+				if err != nil {
+					log.Printf("Error creating follow-up response: %v", err)
+				} else {
+					writer("\n\n" + followUpCompletion)
+					finalMessage = finalMessage + "\n\n" + followUpCompletion
 				}
 			}
 		}
+	} else {
+		// If no tool calls, get current cart summary
+		cartSummary = ai.cartService.GetCartSummary(sessionID)
 	}
 
 	return &models.ChatResponse{

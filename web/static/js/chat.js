@@ -68,7 +68,7 @@ class DualChat2Cart {
         // Start both requests simultaneously
         const promises = [
             this.sendNonStreaming(message),
-            //this.sendStreaming(message)
+            this.sendStreaming(message)
         ];
 
         try {
@@ -120,6 +120,112 @@ class DualChat2Cart {
             this.addMessage('Sorry, I encountered an error. Please try again.', 'assistant', this.nonStreamingMessages);
             this.updateStatus('nonStreamingStatus', 'error', 'Error');
         }
+    }
+
+    async sendStreaming(message) {
+        try {
+            const response = await fetch('/api/v1/chat/message-stream', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    message: message,
+                    session_id: this.sessionId
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to send message');
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            let currentMessage = '';
+
+            // Create initial message container
+            let messageDiv = document.createElement('div');
+            messageDiv.className = 'message assistant';
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+            messageDiv.appendChild(contentDiv);
+            this.streamingMessages.appendChild(messageDiv);
+
+            // Add streaming cursor
+            const cursor = document.createElement('span');
+            cursor.className = 'streaming-cursor';
+            cursor.textContent = '▋';
+            contentDiv.appendChild(cursor);
+
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || ''; // Keep the last incomplete line in the buffer
+
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        console.log(line);
+                        const data = line.slice(6);
+                        
+                        if (data === '[DONE]') {
+                            // End of stream
+                            cursor.remove();
+                            continue;
+                        }
+
+                        if (data.startsWith('[ERROR]')) {
+                            cursor.remove();
+                            throw new Error(data.slice(8));
+                        }
+
+                        if (data.startsWith('[CART_UPDATE]')) {
+                            try {
+                                const cartData = JSON.parse(data.slice(13));
+                                this.updateCart(cartData);
+                            } catch (e) {
+                                console.error('Error parsing cart update:', e);
+                            }
+                            continue;
+                        }
+
+                        // Regular message content
+                        currentMessage += data;
+                        // Update content before the cursor
+                        contentDiv.innerHTML = this.formatMessage(currentMessage);
+                        contentDiv.appendChild(cursor);
+                        this.scrollToBottom(this.streamingMessages);
+                    }
+                }
+            }
+
+            this.updateStatus('streamingStatus', 'complete', 'Complete');
+        } catch (error) {
+            console.error('Error in streaming:', error);
+            this.addMessage('Sorry, I encountered an error. Please try again.', 'assistant', this.streamingMessages);
+            this.updateStatus('streamingStatus', 'error', 'Error');
+        }
+    }
+
+    updateStreamingMessage(content) {
+        // Find the last assistant message or create a new one
+        let messageDiv = this.streamingMessages.querySelector('.message.assistant:last-child');
+        if (!messageDiv) {
+            messageDiv = document.createElement('div');
+            messageDiv.className = 'message assistant';
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+            messageDiv.appendChild(contentDiv);
+            this.streamingMessages.appendChild(messageDiv);
+        }
+
+        // Update the content
+        const contentDiv = messageDiv.querySelector('.message-content');
+        contentDiv.innerHTML = this.formatMessage(content);
+        this.scrollToBottom(this.streamingMessages);
     }
 
     createToolCallsMessage(toolCalls) {
