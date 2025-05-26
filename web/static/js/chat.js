@@ -99,12 +99,16 @@ class DualChat2Cart {
             }
 
             const data = await response.json();
-            this.addMessage(data.message, 'assistant', this.nonStreamingMessages);
             
-            // Add function calls if any
+            // First add tool calls if any
             if (data.tool_calls && data.tool_calls.length > 0) {
-                this.addFunctionCallsToSection(data.tool_calls, 'nonStreamingToolCalls');
+                const toolCallsMessage = this.createToolCallsMessage(data.tool_calls);
+                this.nonStreamingMessages.appendChild(toolCallsMessage);
+                this.scrollToBottom(this.nonStreamingMessages);
             }
+            
+            // Then add the AI response
+            this.addMessage(data.message, 'assistant', this.nonStreamingMessages);
             
             this.updateStatus('nonStreamingStatus', 'complete', 'Complete');
             
@@ -118,92 +122,25 @@ class DualChat2Cart {
         }
     }
 
-    async sendStreaming(message) {
-        try {
-            const response = await fetch('/api/v1/chat/message-stream', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    message: message,
-                    session_id: this.sessionId
-                })
-            });
-
-            if (!response.ok) {
-                throw new Error('Failed to start streaming');
-            }
-
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-            
-            // Create streaming message element
-            const messageDiv = this.createStreamingMessage();
-            this.streamingMessages.appendChild(messageDiv);
-            const contentDiv = messageDiv.querySelector('.message-content');
-            
-            let buffer = '';
-            let firstTokenReceived = false;
-
-            while (true) {
-                const { done, value } = await reader.read();
-                
-                if (done) break;
-                
-                buffer += decoder.decode(value, { stream: true });
-                const lines = buffer.split('\n');
-                buffer = lines.pop(); // Keep incomplete line in buffer
-                
-                for (const line of lines) {
-                    if (line.startsWith('data: ')) {
-                        const data = line.slice(6);
-                        
-                        if (data === '[DONE]') {
-                            this.updateStatus('streamingStatus', 'complete', 'Complete');
-                            contentDiv.classList.remove('streaming-text');
-                            return;
-                        }
-                        
-                        if (data.startsWith('[ERROR]')) {
-                            this.updateStatus('streamingStatus', 'error', 'Error');
-                            contentDiv.innerHTML += '<br><span style="color: red;">' + data + '</span>';
-                            return;
-                        }
-                        
-                        if (data.startsWith('[CART_UPDATE]')) {
-                            // Handle cart update
-                            continue;
-                        }
-                        
-                        if (data.startsWith('[')) {
-                            // Skip control messages
-                            continue;
-                        }
-                        
-                        // Add content to streaming message
-                        if (data.trim()) {
-                            contentDiv.innerHTML += data;
-                            this.scrollToBottom(this.streamingMessages);
-                        }
-                    }
-                }
-            }
-        } catch (error) {
-            console.error('Error in streaming:', error);
-            this.addMessage('Sorry, I encountered an error with streaming. Please try again.', 'assistant', this.streamingMessages);
-            this.updateStatus('streamingStatus', 'error', 'Error');
-        }
-    }
-
-    createStreamingMessage() {
+    createToolCallsMessage(toolCalls) {
         const messageDiv = document.createElement('div');
         messageDiv.className = 'message assistant';
         
         const contentDiv = document.createElement('div');
-        contentDiv.className = 'message-content streaming-text';
+        contentDiv.className = 'message-content';
         
+        // Create a container for all tool calls
+        const toolCallsContainer = document.createElement('div');
+        toolCallsContainer.className = 'tool-calls-container';
+        
+        toolCalls.forEach(toolCall => {
+            const toolCallDiv = this.createToolCallMessage(toolCall);
+            toolCallsContainer.appendChild(toolCallDiv);
+        });
+        
+        contentDiv.appendChild(toolCallsContainer);
         messageDiv.appendChild(contentDiv);
+        
         return messageDiv;
     }
 
@@ -219,6 +156,58 @@ class DualChat2Cart {
         container.appendChild(messageDiv);
         
         this.scrollToBottom(container);
+    }
+
+    createToolCallMessage(toolCall) {
+        const toolCallDiv = document.createElement('div');
+        toolCallDiv.className = `tool-call-message ${toolCall.success ? 'success' : 'error'}`;
+        
+        // Create header (collapsed state)
+        const headerDiv = document.createElement('div');
+        headerDiv.className = 'tool-call-header';
+        headerDiv.innerHTML = `
+            <span class="tool-call-icon">🔧</span>
+            <span class="tool-call-name">${toolCall.tool_name}</span>
+            <span class="tool-call-status">${toolCall.success ? '✓' : '✗'}</span>
+            <span class="tool-call-toggle">▼</span>
+        `;
+        
+        // Create content (expanded state)
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'tool-call-content';
+        
+        // Add parameters if any
+        if (toolCall.tool_name !== 'view_cart' && toolCall.tool_name !== 'checkout') {
+            const paramsDiv = document.createElement('div');
+            paramsDiv.className = 'tool-call-params';
+            paramsDiv.innerHTML = '<strong>Parameters:</strong> ' + this.formatFunctionParams(toolCall.tool_name, toolCall.result);
+            contentDiv.appendChild(paramsDiv);
+        }
+        
+        // Add result
+        const resultDiv = document.createElement('div');
+        resultDiv.className = 'tool-call-result';
+        if (toolCall.success) {
+            resultDiv.innerHTML = '<strong>Result:</strong> ' + this.formatFunctionResult(toolCall);
+        } else {
+            resultDiv.innerHTML = '<strong>Error:</strong> ' + toolCall.error;
+        }
+        contentDiv.appendChild(resultDiv);
+        
+        // Add click handler for collapse/expand
+        headerDiv.addEventListener('click', () => {
+            contentDiv.style.display = contentDiv.style.display === 'none' ? 'block' : 'none';
+            headerDiv.querySelector('.tool-call-toggle').textContent = 
+                contentDiv.style.display === 'none' ? '▼' : '▲';
+        });
+        
+        // Initially hide content
+        contentDiv.style.display = 'none';
+        
+        toolCallDiv.appendChild(headerDiv);
+        toolCallDiv.appendChild(contentDiv);
+        
+        return toolCallDiv;
     }
 
     addFunctionCallsToSection(toolCalls, containerId) {

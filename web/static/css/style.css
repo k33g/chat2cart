@@ -517,69 +517,6 @@ body {
     background: #a8a8a8;
 }
 
-/* Function calls styling */
-.function-calls {
-    margin-top: 12px;
-    background: #f8f9fa;
-    border: 1px solid #e9ecef;
-    border-radius: 8px;
-    overflow: hidden;
-    max-width: 90%;
-}
-
-.function-calls-header {
-    background: #6c757d;
-    color: white;
-    padding: 8px 12px;
-    font-size: 0.875rem;
-    font-weight: 500;
-}
-
-.function-call {
-    padding: 12px;
-    border-bottom: 1px solid #e9ecef;
-    background: white;
-}
-
-.function-call:last-child {
-    border-bottom: none;
-}
-
-.function-call.success {
-    border-left: 4px solid #28a745;
-}
-
-.function-call.error {
-    border-left: 4px solid #dc3545;
-}
-
-.function-name {
-    font-weight: 600;
-    color: #495057;
-    margin-bottom: 4px;
-    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-    font-size: 0.875rem;
-}
-
-.function-params {
-    font-size: 0.8rem;
-    color: #6c757d;
-    margin-bottom: 4px;
-}
-
-.function-result {
-    font-size: 0.8rem;
-    color: #495057;
-}
-
-.function-call.success .function-result {
-    color: #155724;
-}
-
-.function-call.error .function-result {
-    color: #721c24;
-}
-
 /* Tool Calls Section styling */
 .tool-calls-section {
     background: white;
@@ -589,9 +526,10 @@ body {
 }
 
 .tool-calls-container {
-    height: 100%;
     display: flex;
     flex-direction: column;
+    gap: 8px;
+    margin-top: 8px;
 }
 
 .tool-calls-header {
@@ -719,4 +657,89 @@ body {
     .tool-calls-panel:last-child {
         border-radius: 0 0 12px 12px;
     }
+}
+
+/* Tool call message styling */
+.tool-call-message {
+    border-radius: 8px;
+    overflow: hidden;
+    width: 100%;
+}
+
+.tool-call-message.success {
+    border: 1px solid #28a745;
+}
+
+.tool-call-message.error {
+    border: 1px solid #dc3545;
+}
+
+.tool-call-header {
+    background: #f8f9fa;
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+    border-bottom: 1px solid #e9ecef;
+}
+
+.tool-call-message.success .tool-call-header {
+    background: #e8f5e9;
+}
+
+.tool-call-message.error .tool-call-header {
+    background: #ffebee;
+}
+
+.tool-call-icon {
+    font-size: 1rem;
+}
+
+.tool-call-name {
+    flex: 1;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+.tool-call-status {
+    font-size: 0.875rem;
+}
+
+.tool-call-toggle {
+    font-size: 0.75rem;
+    transition: transform 0.2s;
+}
+
+.tool-call-content {
+    padding: 12px;
+    background: white;
+    font-size: 0.875rem;
+}
+
+.tool-call-params,
+.tool-call-result {
+    margin-bottom: 8px;
+}
+
+.tool-call-params:last-child,
+.tool-call-result:last-child {
+    margin-bottom: 0;
+}
+
+.tool-call-params strong,
+.tool-call-result strong {
+    color: #495057;
+}
+
+/* Remove old function calls styling */
+.function-calls,
+.function-calls-header,
+.function-call,
+.function-name,
+.function-params,
+.function-result {
+    display: none;
 }
