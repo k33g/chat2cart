@@ -50,7 +50,7 @@ func (h *ChatHandler) PostMessage(c *gin.Context) {
 	session.AddMessage(userMessage)
 
 	// Process message with AI
-	response, err := h.aiService.ProcessChatMessage(c.Request.Context(), req.Message, req.SessionID)
+	response, err := h.aiService.ProcessChatMessage(c.Request.Context(), req.Message, req.SessionID, session)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process message"})
 		return
@@ -98,7 +98,7 @@ func (h *ChatHandler) PostMessageStream(c *gin.Context) {
 	}
 
 	// Process message with AI streaming
-	response, err := h.aiService.StreamChatMessage(c.Request.Context(), req.Message, req.SessionID, writer)
+	response, err := h.aiService.StreamChatMessage(c.Request.Context(), req.Message, req.SessionID, session, writer)
 	if err != nil {
 		fmt.Fprintf(c.Writer, "data: [ERROR] Failed to process message: %s\n\n", err.Error())
 		c.Writer.Flush()

@@ -36,17 +36,17 @@ func NewAIService(apiKey string, productService *ProductService, cartService *Ca
 }
 
 // ProcessChatMessage processes a chat message and returns a response
-func (ai *AIService) ProcessChatMessage(ctx context.Context, message, sessionID string) (*models.ChatResponse, error) {
+func (ai *AIService) ProcessChatMessage(ctx context.Context, message, sessionID string, session *models.ChatSession) (*models.ChatResponse, error) {
 	// Define the tools available to the AI
 	tools := ai.getToolDefinitions()
 
+	// Build messages including conversation history
+	messages := ai.buildMessagesFromSession(session, message)
+
 	// Create the chat completion request
 	completion, err := ai.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
-		Model: openai.ChatModelGPT4o,
-		Messages: []openai.ChatCompletionMessageParamUnion{
-			openai.SystemMessage(ai.getSystemPrompt()),
-			openai.UserMessage(message),
-		},
+		Model:       openai.ChatModelGPT4o,
+		Messages:    messages,
 		Tools:       tools,
 		Temperature: param.Opt[float64]{Value: 0.00000000000001},
 	})
@@ -90,17 +90,15 @@ func (ai *AIService) ProcessChatMessage(ctx context.Context, message, sessionID 
 }
 
 // StreamChatMessage processes a chat message and streams the response
-func (ai *AIService) StreamChatMessage(ctx context.Context, message, sessionID string, writer func(string)) (*models.ChatResponse, error) {
-	// For now, we'll implement a simpler streaming approach without tool calls
-	// This is because OpenAI streaming with tool calls is complex and requires special handling
+func (ai *AIService) StreamChatMessage(ctx context.Context, message, sessionID string, session *models.ChatSession, writer func(string)) (*models.ChatResponse, error) {
+	// Build messages including conversation history
+	messages := ai.buildMessagesFromSession(session, message)
 
 	// Create the streaming chat completion request without tools for now
+	// This is because OpenAI streaming with tool calls is complex and requires special handling
 	stream := ai.client.Chat.Completions.NewStreaming(ctx, openai.ChatCompletionNewParams{
-		Model: openai.ChatModelGPT4o,
-		Messages: []openai.ChatCompletionMessageParamUnion{
-			openai.SystemMessage(ai.getSystemPrompt()),
-			openai.UserMessage(message),
-		},
+		Model:       openai.ChatModelGPT4o,
+		Messages:    messages,
 		Temperature: param.Opt[float64]{Value: 0.00000000000001},
 	})
 
@@ -512,6 +510,31 @@ func (ai *AIService) handleCheckout(sessionID string) models.ToolCallResult {
 		Success:  true,
 		Result:   checkoutResult,
 	}
+}
+
+// buildMessagesFromSession converts chat session messages to OpenAI format
+func (ai *AIService) buildMessagesFromSession(session *models.ChatSession, currentMessage string) []openai.ChatCompletionMessageParamUnion {
+	messages := []openai.ChatCompletionMessageParamUnion{
+		openai.SystemMessage(ai.getSystemPrompt()),
+	}
+
+	// Add previous messages from the session (excluding the current message which will be added separately)
+	for _, msg := range session.Messages {
+		switch models.ChatRole(msg.Role) {
+		case models.RoleUser:
+			messages = append(messages, openai.UserMessage(msg.Content))
+		case models.RoleAssistant:
+			messages = append(messages, openai.AssistantMessage(msg.Content))
+		case models.RoleSystem:
+			// Skip system messages as we already have one
+			continue
+		}
+	}
+
+	// Add the current message
+	messages = append(messages, openai.UserMessage(currentMessage))
+
+	return messages
 }
 
 // createFollowUpResponse creates a natural language response based on tool results
