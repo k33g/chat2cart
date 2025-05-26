@@ -1,4 +1,4 @@
-class Chat2Cart {
+class DualChat2Cart {
     constructor() {
         this.sessionId = this.generateSessionId();
         this.isLoading = false;
@@ -9,9 +9,19 @@ class Chat2Cart {
     }
 
     initializeElements() {
+        // Input elements
         this.messageInput = document.getElementById('messageInput');
         this.sendButton = document.getElementById('sendButton');
-        this.chatMessages = document.getElementById('chatMessages');
+        
+        // Non-streaming elements
+        this.nonStreamingMessages = document.getElementById('nonStreamingMessages');
+        this.nonStreamingStatus = document.getElementById('nonStreamingStatus');
+        
+        // Streaming elements
+        this.streamingMessages = document.getElementById('streamingMessages');
+        this.streamingStatus = document.getElementById('streamingStatus');
+        
+        // Cart elements
         this.cartItems = document.getElementById('cartItems');
         this.cartCount = document.getElementById('cartCount');
         this.cartSummary = document.getElementById('cartSummary');
@@ -19,16 +29,18 @@ class Chat2Cart {
         this.tax = document.getElementById('tax');
         this.total = document.getElementById('total');
         this.checkoutBtn = document.getElementById('checkoutBtn');
+        
+        // Other elements
         this.loadingIndicator = document.getElementById('loadingIndicator');
         this.toastContainer = document.getElementById('toastContainer');
     }
 
     bindEvents() {
-        this.sendButton.addEventListener('click', () => this.sendMessage());
+        this.sendButton.addEventListener('click', () => this.sendToBoth());
         this.messageInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
-                this.sendMessage();
+                this.sendToBoth();
             }
         });
         this.checkoutBtn.addEventListener('click', () => this.checkout());
@@ -38,14 +50,38 @@ class Chat2Cart {
         return 'session-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
     }
 
-    async sendMessage() {
+    async sendToBoth() {
         const message = this.messageInput.value.trim();
         if (!message || this.isLoading) return;
 
-        this.addMessage(message, 'user');
         this.messageInput.value = '';
         this.setLoading(true);
 
+        // Add user message to both chats
+        this.addMessage(message, 'user', this.nonStreamingMessages);
+        this.addMessage(message, 'user', this.streamingMessages);
+
+        // Update status
+        this.updateStatus('nonStreamingStatus', 'processing', 'Processing...');
+        this.updateStatus('streamingStatus', 'processing', 'Streaming...');
+
+        // Start both requests simultaneously
+        const promises = [
+            this.sendNonStreaming(message),
+            this.sendStreaming(message)
+        ];
+
+        try {
+            await Promise.all(promises);
+        } catch (error) {
+            console.error('Error in dual chat:', error);
+            this.showToast('Error processing messages', 'error');
+        } finally {
+            this.setLoading(false);
+        }
+    }
+
+    async sendNonStreaming(message) {
         try {
             const response = await fetch('/api/v1/chat/message', {
                 method: 'POST',
@@ -63,21 +99,109 @@ class Chat2Cart {
             }
 
             const data = await response.json();
-            this.addMessage(data.message, 'assistant');
+            this.addMessage(data.message, 'assistant', this.nonStreamingMessages);
+            this.updateStatus('nonStreamingStatus', 'complete', 'Complete');
             
             if (data.cart_summary) {
                 this.updateCart(data.cart_summary);
             }
         } catch (error) {
-            console.error('Error sending message:', error);
-            this.addMessage('Sorry, I encountered an error. Please try again.', 'assistant');
-            this.showToast('Failed to send message', 'error');
-        } finally {
-            this.setLoading(false);
+            console.error('Error in non-streaming:', error);
+            this.addMessage('Sorry, I encountered an error. Please try again.', 'assistant', this.nonStreamingMessages);
+            this.updateStatus('nonStreamingStatus', 'error', 'Error');
         }
     }
 
-    addMessage(content, role) {
+    async sendStreaming(message) {
+        try {
+            const response = await fetch('/api/v1/chat/message-stream', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    message: message,
+                    session_id: this.sessionId
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to start streaming');
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            
+            // Create streaming message element
+            const messageDiv = this.createStreamingMessage();
+            this.streamingMessages.appendChild(messageDiv);
+            const contentDiv = messageDiv.querySelector('.message-content');
+            
+            let buffer = '';
+            let firstTokenReceived = false;
+
+            while (true) {
+                const { done, value } = await reader.read();
+                
+                if (done) break;
+                
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop(); // Keep incomplete line in buffer
+                
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        const data = line.slice(6);
+                        
+                        if (data === '[DONE]') {
+                            this.updateStatus('streamingStatus', 'complete', 'Complete');
+                            contentDiv.classList.remove('streaming-text');
+                            return;
+                        }
+                        
+                        if (data.startsWith('[ERROR]')) {
+                            this.updateStatus('streamingStatus', 'error', 'Error');
+                            contentDiv.innerHTML += '<br><span style="color: red;">' + data + '</span>';
+                            return;
+                        }
+                        
+                        if (data.startsWith('[CART_UPDATE]')) {
+                            // Handle cart update
+                            continue;
+                        }
+                        
+                        if (data.startsWith('[')) {
+                            // Skip control messages
+                            continue;
+                        }
+                        
+                        // Add content to streaming message
+                        if (data.trim()) {
+                            contentDiv.innerHTML += data;
+                            this.scrollToBottom(this.streamingMessages);
+                        }
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Error in streaming:', error);
+            this.addMessage('Sorry, I encountered an error with streaming. Please try again.', 'assistant', this.streamingMessages);
+            this.updateStatus('streamingStatus', 'error', 'Error');
+        }
+    }
+
+    createStreamingMessage() {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message assistant';
+        
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'message-content streaming-text';
+        
+        messageDiv.appendChild(contentDiv);
+        return messageDiv;
+    }
+
+    addMessage(content, role, container) {
         const messageDiv = document.createElement('div');
         messageDiv.className = `message ${role}`;
         
@@ -86,18 +210,26 @@ class Chat2Cart {
         contentDiv.innerHTML = this.formatMessage(content);
         
         messageDiv.appendChild(contentDiv);
-        this.chatMessages.appendChild(messageDiv);
+        container.appendChild(messageDiv);
         
-        // Scroll to bottom
-        this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
+        this.scrollToBottom(container);
     }
 
     formatMessage(content) {
-        // Simple formatting - convert newlines to <br> and preserve basic structure
         return content
             .replace(/\n/g, '<br>')
             .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
             .replace(/\*(.*?)\*/g, '<em>$1</em>');
+    }
+
+    scrollToBottom(container) {
+        container.scrollTop = container.scrollHeight;
+    }
+
+    updateStatus(elementId, statusClass, text) {
+        const element = document.getElementById(elementId);
+        element.className = `status ${statusClass}`;
+        element.textContent = text;
     }
 
     async loadCart() {
@@ -139,12 +271,12 @@ class Chat2Cart {
                     <div class="item-name">${item.product.name}</div>
                     <div class="item-price">$${item.product.price.toFixed(2)} each</div>
                     <div class="item-quantity">
-                        <button class="quantity-btn" onclick="chat2cart.updateQuantity('${item.product.id}', ${item.quantity - 1})">-</button>
+                        <button class="quantity-btn" onclick="dualChat.updateQuantity('${item.product.id}', ${item.quantity - 1})">-</button>
                         <span class="quantity-display">${item.quantity}</span>
-                        <button class="quantity-btn" onclick="chat2cart.updateQuantity('${item.product.id}', ${item.quantity + 1})">+</button>
+                        <button class="quantity-btn" onclick="dualChat.updateQuantity('${item.product.id}', ${item.quantity + 1})">+</button>
                     </div>
                 </div>
-                <button class="remove-btn" onclick="chat2cart.removeItem('${item.product.id}')">Remove</button>
+                <button class="remove-btn" onclick="dualChat.removeItem('${item.product.id}')">Remove</button>
             </div>
         `).join('');
     }
@@ -222,7 +354,10 @@ class Chat2Cart {
             if (response.ok) {
                 const result = await response.json();
                 this.showToast('Order placed successfully!', 'success');
-                this.addMessage(`🎉 Congratulations! Your order has been placed successfully!\n\nOrder ID: ${result.order_id}\n${result.message}`, 'assistant');
+                
+                const successMessage = `🎉 Congratulations! Your order has been placed successfully!\n\nOrder ID: ${result.order_id}\n${result.message}`;
+                this.addMessage(successMessage, 'assistant', this.nonStreamingMessages);
+                this.addMessage(successMessage, 'assistant', this.streamingMessages);
                 
                 // Clear cart after successful checkout
                 this.updateCart({
@@ -251,9 +386,9 @@ class Chat2Cart {
         this.loadingIndicator.style.display = loading ? 'flex' : 'none';
         
         if (loading) {
-            this.sendButton.innerHTML = '<span>Sending...</span>';
+            this.sendButton.innerHTML = '<span>Processing...</span>';
         } else {
-            this.sendButton.innerHTML = '<span>Send</span>';
+            this.sendButton.innerHTML = '<span>Send to Both</span>';
         }
     }
 
@@ -271,55 +406,30 @@ class Chat2Cart {
             }
         }, 3000);
     }
-
-    // Utility method to format currency
-    formatCurrency(amount) {
-        return new Intl.NumberFormat('en-US', {
-            style: 'currency',
-            currency: 'USD'
-        }).format(amount);
-    }
-
-    // Method to handle API errors
-    handleApiError(error, defaultMessage) {
-        console.error('API Error:', error);
-        let message = defaultMessage;
-        
-        if (error.response) {
-            // Server responded with error status
-            message = error.response.data?.error || defaultMessage;
-        } else if (error.request) {
-            // Network error
-            message = 'Network error. Please check your connection.';
-        }
-        
-        this.showToast(message, 'error');
-    }
 }
 
 // Initialize the application when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
-    window.chat2cart = new Chat2Cart();
+    window.dualChat = new DualChat2Cart();
 });
 
 // Handle page visibility changes to reconnect if needed
 document.addEventListener('visibilitychange', () => {
-    if (!document.hidden && window.chat2cart) {
-        // Reload cart when page becomes visible again
-        window.chat2cart.loadCart();
+    if (!document.hidden && window.dualChat) {
+        window.dualChat.loadCart();
     }
 });
 
 // Handle online/offline events
 window.addEventListener('online', () => {
-    if (window.chat2cart) {
-        window.chat2cart.showToast('Connection restored', 'success');
-        window.chat2cart.loadCart();
+    if (window.dualChat) {
+        window.dualChat.showToast('Connection restored', 'success');
+        window.dualChat.loadCart();
     }
 });
 
 window.addEventListener('offline', () => {
-    if (window.chat2cart) {
-        window.chat2cart.showToast('Connection lost. Some features may not work.', 'warning');
+    if (window.dualChat) {
+        window.dualChat.showToast('Connection lost. Some features may not work.', 'warning');
     }
 });

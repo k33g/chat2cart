@@ -65,6 +65,7 @@ func setupRoutes(router *gin.Engine, chatHandler *handlers.ChatHandler, staticHa
 	{
 		// Chat endpoints
 		api.POST("/chat/message", chatHandler.PostMessage)
+		api.POST("/chat/message-stream", chatHandler.PostMessageStream)
 		api.GET("/chat/session/:sessionId", chatHandler.GetSession)
 
 		// Cart endpoints

@@ -89,6 +89,95 @@ func (ai *AIService) ProcessChatMessage(ctx context.Context, message, sessionID 
 	}, nil
 }
 
+// StreamChatMessage processes a chat message and streams the response
+func (ai *AIService) StreamChatMessage(ctx context.Context, message, sessionID string, writer func(string)) (*models.ChatResponse, error) {
+	// For now, we'll implement a simpler streaming approach without tool calls
+	// This is because OpenAI streaming with tool calls is complex and requires special handling
+
+	// Create the streaming chat completion request without tools for now
+	stream := ai.client.Chat.Completions.NewStreaming(ctx, openai.ChatCompletionNewParams{
+		Model: openai.ChatModelGPT4o,
+		Messages: []openai.ChatCompletionMessageParamUnion{
+			openai.SystemMessage(ai.getSystemPrompt()),
+			openai.UserMessage(message),
+		},
+		Temperature: param.Opt[float64]{Value: 0.00000000000001},
+	})
+
+	var responseMessage strings.Builder
+	var created int64
+
+	// Process the stream
+	for stream.Next() {
+		chunk := stream.Current()
+		created = chunk.Created
+
+		if len(chunk.Choices) > 0 {
+			choice := chunk.Choices[0]
+
+			// Handle content streaming
+			if choice.Delta.Content != "" {
+				responseMessage.WriteString(choice.Delta.Content)
+				writer(choice.Delta.Content)
+			}
+		}
+	}
+
+	if stream.Err() != nil {
+		return nil, fmt.Errorf("streaming error: %w", stream.Err())
+	}
+
+	finalMessage := responseMessage.String()
+
+	// For streaming, we'll handle tool calls in a second pass if needed
+	// Check if the message suggests tool usage and handle it
+	cartSummary := ai.cartService.GetCartSummary(sessionID)
+
+	// Simple tool detection - in a real implementation, you'd want more sophisticated parsing
+	if strings.Contains(strings.ToLower(finalMessage), "search") ||
+		strings.Contains(strings.ToLower(finalMessage), "add") ||
+		strings.Contains(strings.ToLower(finalMessage), "cart") {
+		writer("\n\n🔧 Processing tools...")
+
+		// Make a second call with tools to handle any actions
+		toolCompletion, err := ai.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+			Model: openai.ChatModelGPT4o,
+			Messages: []openai.ChatCompletionMessageParamUnion{
+				openai.SystemMessage(ai.getSystemPrompt()),
+				openai.UserMessage(message),
+			},
+			Tools: ai.getToolDefinitions(),
+		})
+
+		if err == nil && len(toolCompletion.Choices) > 0 && len(toolCompletion.Choices[0].Message.ToolCalls) > 0 {
+			toolResults, err := ai.executeToolCalls(ctx, toolCompletion.Choices[0].Message.ToolCalls, sessionID)
+			if err != nil {
+				log.Printf("Error executing tool calls: %v", err)
+			} else {
+				cartSummary = ai.cartService.GetCartSummary(sessionID)
+
+				if len(toolResults) > 0 {
+					writer("\n\n💭 Generating response...")
+					followUpCompletion, err := ai.createFollowUpResponse(ctx, message, toolResults, cartSummary)
+					if err != nil {
+						log.Printf("Error creating follow-up response: %v", err)
+					} else {
+						writer("\n\n" + followUpCompletion)
+						finalMessage = finalMessage + "\n\n" + followUpCompletion
+					}
+				}
+			}
+		}
+	}
+
+	return &models.ChatResponse{
+		Message:     finalMessage,
+		SessionID:   sessionID,
+		CartSummary: cartSummary,
+		Timestamp:   time.Unix(created, 0),
+	}, nil
+}
+
 // getSystemPrompt returns the system prompt for the AI
 func (ai *AIService) getSystemPrompt() string {
 	return `You are a helpful shopping assistant for chat2cart, an AI-powered shopping platform. Your role is to help users discover products, manage their shopping cart, and complete purchases through natural conversation.

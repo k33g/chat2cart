@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
@@ -60,6 +61,63 @@ func (h *ChatHandler) PostMessage(c *gin.Context) {
 	session.AddMessage(aiMessage)
 
 	c.JSON(http.StatusOK, response)
+}
+
+// PostMessageStream handles incoming chat messages with streaming response
+func (h *ChatHandler) PostMessageStream(c *gin.Context) {
+	var req models.ChatRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request format"})
+		return
+	}
+
+	// Generate session ID if not provided
+	if req.SessionID == "" {
+		req.SessionID = generateSessionID()
+	}
+
+	// Get or create chat session
+	session := h.getOrCreateSession(req.SessionID)
+
+	// Add user message to session
+	userMessage := models.NewChatMessage(models.RoleUser, req.Message, req.SessionID)
+	session.AddMessage(userMessage)
+
+	// Set headers for Server-Sent Events
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Header("Access-Control-Allow-Origin", "*")
+	c.Header("Access-Control-Allow-Headers", "Cache-Control")
+
+	// Create a writer function for streaming
+	writer := func(content string) {
+		// Send the content as SSE data
+		fmt.Fprintf(c.Writer, "data: %s\n\n", content)
+		c.Writer.Flush()
+	}
+
+	// Process message with AI streaming
+	response, err := h.aiService.StreamChatMessage(c.Request.Context(), req.Message, req.SessionID, writer)
+	if err != nil {
+		fmt.Fprintf(c.Writer, "data: [ERROR] Failed to process message: %s\n\n", err.Error())
+		c.Writer.Flush()
+		return
+	}
+
+	// Add AI response to session
+	aiMessage := models.NewChatMessage(models.RoleAssistant, response.Message, req.SessionID)
+	session.AddMessage(aiMessage)
+
+	// Send final response with cart summary
+	if response.CartSummary != nil {
+		fmt.Fprintf(c.Writer, "data: [CART_UPDATE] %v\n\n", response.CartSummary)
+		c.Writer.Flush()
+	}
+
+	// Send end signal
+	fmt.Fprintf(c.Writer, "data: [DONE]\n\n")
+	c.Writer.Flush()
 }
 
 // GetSession returns the chat session history
