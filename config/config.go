@@ -3,6 +3,8 @@ package config
 import (
 	"os"
 	"strconv"
+
+	"github.com/joho/godotenv"
 )
 
 // Config holds the application configuration
@@ -12,8 +14,11 @@ type Config struct {
 	Environment  string
 }
 
-// Load loads configuration from environment variables
+// Load loads configuration from environment variables and .env file
 func Load() *Config {
+	// Load .env file if it exists
+	_ = godotenv.Load()
+
 	return &Config{
 		OpenAIAPIKey: getEnv("OPENAI_API_KEY", ""),
 		Port:         getEnv("PORT", "8080"),

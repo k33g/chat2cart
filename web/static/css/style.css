@@ -516,3 +516,207 @@ body {
 .cart-items::-webkit-scrollbar-thumb:hover {
     background: #a8a8a8;
 }
+
+/* Function calls styling */
+.function-calls {
+    margin-top: 12px;
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 8px;
+    overflow: hidden;
+    max-width: 90%;
+}
+
+.function-calls-header {
+    background: #6c757d;
+    color: white;
+    padding: 8px 12px;
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+.function-call {
+    padding: 12px;
+    border-bottom: 1px solid #e9ecef;
+    background: white;
+}
+
+.function-call:last-child {
+    border-bottom: none;
+}
+
+.function-call.success {
+    border-left: 4px solid #28a745;
+}
+
+.function-call.error {
+    border-left: 4px solid #dc3545;
+}
+
+.function-name {
+    font-weight: 600;
+    color: #495057;
+    margin-bottom: 4px;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 0.875rem;
+}
+
+.function-params {
+    font-size: 0.8rem;
+    color: #6c757d;
+    margin-bottom: 4px;
+}
+
+.function-result {
+    font-size: 0.8rem;
+    color: #495057;
+}
+
+.function-call.success .function-result {
+    color: #155724;
+}
+
+.function-call.error .function-result {
+    color: #721c24;
+}
+
+/* Tool Calls Section styling */
+.tool-calls-section {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+    margin-bottom: 20px;
+}
+
+.tool-calls-container {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.tool-calls-header {
+    padding: 20px;
+    border-bottom: 1px solid #e9ecef;
+    background: #f8f9fa;
+    border-radius: 12px 12px 0 0;
+}
+
+.tool-calls-header h2 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin: 0;
+}
+
+.tool-calls-dual {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1px;
+    background: #e9ecef;
+    min-height: 200px;
+}
+
+.tool-calls-panel {
+    background: white;
+    display: flex;
+    flex-direction: column;
+}
+
+.tool-calls-panel:first-child {
+    border-radius: 0 0 0 12px;
+}
+
+.tool-calls-panel:last-child {
+    border-radius: 0 0 12px 0;
+}
+
+.tool-calls-panel-header {
+    padding: 12px 20px;
+    background: #f8f9fa;
+    border-bottom: 1px solid #e9ecef;
+    font-weight: 600;
+    color: #495057;
+}
+
+.tool-calls-panel-header h3 {
+    margin: 0;
+    font-size: 1rem;
+}
+
+.tool-calls-content {
+    flex: 1;
+    padding: 20px;
+    overflow-y: auto;
+    max-height: 300px;
+}
+
+.no-tool-calls {
+    text-align: center;
+    color: #6c757d;
+    margin-top: 40px;
+}
+
+.no-tool-calls-subtitle {
+    font-size: 0.875rem;
+    margin-top: 8px;
+}
+
+/* Tool call items in dedicated section */
+.tool-call-item {
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 12px;
+    border-left: 4px solid #6c757d;
+}
+
+.tool-call-item.success {
+    border-left-color: #28a745;
+}
+
+.tool-call-item.error {
+    border-left-color: #dc3545;
+}
+
+.tool-call-name {
+    font-weight: 600;
+    color: #495057;
+    margin-bottom: 6px;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 0.875rem;
+}
+
+.tool-call-params {
+    font-size: 0.8rem;
+    color: #6c757d;
+    margin-bottom: 6px;
+}
+
+.tool-call-result {
+    font-size: 0.8rem;
+    color: #495057;
+}
+
+.tool-call-item.success .tool-call-result {
+    color: #155724;
+}
+
+.tool-call-item.error .tool-call-result {
+    color: #721c24;
+}
+
+/* Responsive adjustments for tool calls */
+@media (max-width: 1200px) {
+    .tool-calls-dual {
+        grid-template-columns: 1fr;
+        gap: 1px;
+    }
+    
+    .tool-calls-panel:first-child {
+        border-radius: 0;
+    }
+    
+    .tool-calls-panel:last-child {
+        border-radius: 0 0 12px 12px;
+    }
+}

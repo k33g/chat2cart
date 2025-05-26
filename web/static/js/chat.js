@@ -68,7 +68,7 @@ class DualChat2Cart {
         // Start both requests simultaneously
         const promises = [
             this.sendNonStreaming(message),
-            this.sendStreaming(message)
+            //this.sendStreaming(message)
         ];
 
         try {
@@ -100,6 +100,12 @@ class DualChat2Cart {
 
             const data = await response.json();
             this.addMessage(data.message, 'assistant', this.nonStreamingMessages);
+            
+            // Add function calls if any
+            if (data.tool_calls && data.tool_calls.length > 0) {
+                this.addFunctionCallsToSection(data.tool_calls, 'nonStreamingToolCalls');
+            }
+            
             this.updateStatus('nonStreamingStatus', 'complete', 'Complete');
             
             if (data.cart_summary) {
@@ -213,6 +219,136 @@ class DualChat2Cart {
         container.appendChild(messageDiv);
         
         this.scrollToBottom(container);
+    }
+
+    addFunctionCallsToSection(toolCalls, containerId) {
+        const container = document.getElementById(containerId);
+        
+        // Clear the "no tool calls" message if it exists
+        const noToolCallsDiv = container.querySelector('.no-tool-calls');
+        if (noToolCallsDiv) {
+            noToolCallsDiv.remove();
+        }
+        
+        toolCalls.forEach(toolCall => {
+            const callDiv = document.createElement('div');
+            callDiv.className = `tool-call-item ${toolCall.success ? 'success' : 'error'}`;
+            
+            // Function name
+            const nameDiv = document.createElement('div');
+            nameDiv.className = 'tool-call-name';
+            nameDiv.textContent = toolCall.tool_name;
+            callDiv.appendChild(nameDiv);
+            
+            // Parameters (if any)
+            if (toolCall.tool_name !== 'view_cart' && toolCall.tool_name !== 'checkout') {
+                const paramsDiv = document.createElement('div');
+                paramsDiv.className = 'tool-call-params';
+                paramsDiv.innerHTML = '<strong>Parameters:</strong> ' + this.formatFunctionParams(toolCall.tool_name, toolCall.result);
+                callDiv.appendChild(paramsDiv);
+            }
+            
+            // Result
+            const resultDiv = document.createElement('div');
+            resultDiv.className = 'tool-call-result';
+            if (toolCall.success) {
+                resultDiv.innerHTML = '<strong>Result:</strong> ' + this.formatFunctionResult(toolCall);
+            } else {
+                resultDiv.innerHTML = '<strong>Error:</strong> ' + toolCall.error;
+            }
+            callDiv.appendChild(resultDiv);
+            
+            container.appendChild(callDiv);
+        });
+        
+        // Scroll to show the new tool calls
+        container.scrollTop = container.scrollHeight;
+    }
+
+    addFunctionCalls(toolCalls, container) {
+        const functionCallsDiv = document.createElement('div');
+        functionCallsDiv.className = 'function-calls';
+        
+        const headerDiv = document.createElement('div');
+        headerDiv.className = 'function-calls-header';
+        headerDiv.innerHTML = '🔧 Function Calls';
+        functionCallsDiv.appendChild(headerDiv);
+        
+        toolCalls.forEach(toolCall => {
+            const callDiv = document.createElement('div');
+            callDiv.className = `function-call ${toolCall.success ? 'success' : 'error'}`;
+            
+            // Function name
+            const nameDiv = document.createElement('div');
+            nameDiv.className = 'function-name';
+            nameDiv.textContent = toolCall.tool_name;
+            callDiv.appendChild(nameDiv);
+            
+            // Parameters (if any)
+            if (toolCall.tool_name !== 'view_cart' && toolCall.tool_name !== 'checkout') {
+                const paramsDiv = document.createElement('div');
+                paramsDiv.className = 'function-params';
+                paramsDiv.innerHTML = '<strong>Parameters:</strong> ' + this.formatFunctionParams(toolCall.tool_name, toolCall.result);
+                callDiv.appendChild(paramsDiv);
+            }
+            
+            // Result
+            const resultDiv = document.createElement('div');
+            resultDiv.className = 'function-result';
+            if (toolCall.success) {
+                resultDiv.innerHTML = '<strong>Result:</strong> ' + this.formatFunctionResult(toolCall);
+            } else {
+                resultDiv.innerHTML = '<strong>Error:</strong> ' + toolCall.error;
+            }
+            callDiv.appendChild(resultDiv);
+            
+            functionCallsDiv.appendChild(callDiv);
+        });
+        
+        container.appendChild(functionCallsDiv);
+        this.scrollToBottom(container);
+    }
+
+    formatFunctionParams(toolName, result) {
+        switch (toolName) {
+            case 'search_products':
+                // Extract params from the search results context
+                return 'query, category, limit';
+            case 'add_to_cart':
+                return 'product_id, quantity';
+            case 'remove_from_cart':
+                return 'product_id';
+            case 'update_quantity':
+                return 'product_id, quantity';
+            default:
+                return 'none';
+        }
+    }
+
+    formatFunctionResult(toolCall) {
+        if (!toolCall.success) {
+            return toolCall.error;
+        }
+        
+        switch (toolCall.tool_name) {
+            case 'search_products':
+                if (Array.isArray(toolCall.result)) {
+                    return `Found ${toolCall.result.length} products`;
+                }
+                return 'Search completed';
+            case 'add_to_cart':
+                return 'Item added to cart';
+            case 'remove_from_cart':
+                return 'Item removed from cart';
+            case 'update_quantity':
+                return 'Quantity updated';
+            case 'view_cart':
+                return 'Cart viewed';
+            case 'checkout':
+                return 'Checkout processed';
+            default:
+                return 'Function executed';
+        }
     }
 
     formatMessage(content) {

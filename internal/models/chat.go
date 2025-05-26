@@ -81,10 +81,11 @@ type ChatRequest struct {
 
 // ChatResponse represents a chat response
 type ChatResponse struct {
-	Message     string       `json:"message"`
-	SessionID   string       `json:"session_id"`
-	CartSummary *CartSummary `json:"cart_summary,omitempty"`
-	Timestamp   time.Time    `json:"timestamp"`
+	Message     string           `json:"message"`
+	SessionID   string           `json:"session_id"`
+	CartSummary *CartSummary     `json:"cart_summary,omitempty"`
+	Timestamp   time.Time        `json:"timestamp"`
+	ToolCalls   []ToolCallResult `json:"tool_calls,omitempty"`
 }
 
 // ToolCallResult represents the result of a tool call
