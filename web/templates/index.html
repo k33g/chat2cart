@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.title}}</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>🛒 chat2cart</h1>
+            <p>Your AI-powered shopping assistant</p>
+        </header>
+
+        <div class="main-content">
+            <div class="chat-section">
+                <div class="chat-container">
+                    <div class="chat-messages" id="chatMessages">
+                        <div class="message assistant">
+                            <div class="message-content">
+                                <p>👋 Hello! I'm your AI shopping assistant. I can help you:</p>
+                                <ul>
+                                    <li>🔍 Search for products</li>
+                                    <li>🛒 Add items to your cart</li>
+                                    <li>📝 Manage your cart</li>
+                                    <li>💳 Complete your purchase</li>
+                                </ul>
+                                <p>What would you like to shop for today?</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="chat-input-container">
+                        <div class="chat-input">
+                            <input type="text" id="messageInput" placeholder="Type your message here..." autocomplete="off">
+                            <button id="sendButton" type="button">
+                                <span>Send</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="cart-section">
+                <div class="cart-container">
+                    <div class="cart-header">
+                        <h2>🛒 Your Cart</h2>
+                        <span class="cart-count" id="cartCount">0 items</span>
+                    </div>
+                    
+                    <div class="cart-items" id="cartItems">
+                        <div class="empty-cart">
+                            <p>Your cart is empty</p>
+                            <p class="empty-cart-subtitle">Start chatting to add items!</p>
+                        </div>
+                    </div>
+                    
+                    <div class="cart-summary" id="cartSummary" style="display: none;">
+                        <div class="summary-row">
+                            <span>Subtotal:</span>
+                            <span id="subtotal">$0.00</span>
+                        </div>
+                        <div class="summary-row">
+                            <span>Tax:</span>
+                            <span id="tax">$0.00</span>
+                        </div>
+                        <div class="summary-row total">
+                            <span>Total:</span>
+                            <span id="total">$0.00</span>
+                        </div>
+                        <button class="checkout-btn" id="checkoutBtn">
+                            Proceed to Checkout
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading indicator -->
+    <div class="loading-indicator" id="loadingIndicator" style="display: none;">
+        <div class="spinner"></div>
+    </div>
+
+    <!-- Toast notifications -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script src="/static/js/chat.js"></script>
+</body>
+</html>
