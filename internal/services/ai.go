@@ -279,16 +279,16 @@ func (ai *AIService) getToolDefinitions() []openai.ChatCompletionToolParam {
 				Parameters: openai.FunctionParameters{
 					"type": "object",
 					"properties": map[string]interface{}{
-						"product_id": map[string]interface{}{
+						"product_name": map[string]interface{}{
 							"type":        "string",
-							"description": "The ID of the product to add",
+							"description": "The name of the product to add",
 						},
 						"quantity": map[string]interface{}{
 							"type":        "integer",
 							"description": "Quantity to add (default: 1)",
 						},
 					},
-					"required": []string{"product_id"},
+					"required": []string{"product_name"},
 				},
 			},
 		},
@@ -438,8 +438,8 @@ func (ai *AIService) handleSearchProducts(arguments string) models.ToolCallResul
 
 func (ai *AIService) handleAddToCart(arguments string, sessionID string) models.ToolCallResult {
 	var args struct {
-		ProductID string `json:"product_id"`
-		Quantity  int    `json:"quantity"`
+		ProductName string `json:"product_name"`
+		Quantity    int    `json:"quantity"`
 	}
 
 	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
@@ -454,7 +454,7 @@ func (ai *AIService) handleAddToCart(arguments string, sessionID string) models.
 		args.Quantity = 1
 	}
 
-	cartSummary, err := ai.cartService.AddToCart(sessionID, args.ProductID, args.Quantity)
+	cartSummary, err := ai.cartService.AddProductByName(sessionID, args.ProductName, args.Quantity)
 	if err != nil {
 		return models.ToolCallResult{
 			ToolName: "add_to_cart",
