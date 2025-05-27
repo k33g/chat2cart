@@ -447,3 +447,109 @@ window.addEventListener('offline', () => {
         window.chat.showToast('Connection lost. Some features may not work.', 'warning');
     }
 });
+
+// Settings configuration
+let currentSettings = {
+    model: 'gpt-4',
+    apiBaseUrl: 'https://api.openai.com/v1'
+};
+
+// DOM Elements for settings
+const settingsBtn = document.getElementById('settingsBtn');
+const settingsModal = document.getElementById('settingsModal');
+const closeBtn = document.querySelector('.close-btn');
+const modelSelect = document.getElementById('modelSelect');
+const apiBaseUrl = document.getElementById('apiBaseUrl');
+const saveSettings = document.getElementById('saveSettings');
+
+// Load settings from localStorage
+function loadSettings() {
+    const savedSettings = localStorage.getItem('chat2cartSettings');
+    if (savedSettings) {
+        currentSettings = JSON.parse(savedSettings);
+        modelSelect.value = currentSettings.model;
+        apiBaseUrl.value = currentSettings.apiBaseUrl;
+    }
+}
+
+// Save settings to localStorage
+function saveSettingsToStorage() {
+    currentSettings = {
+        model: modelSelect.value,
+        apiBaseUrl: apiBaseUrl.value
+    };
+    localStorage.setItem('chat2cartSettings', JSON.stringify(currentSettings));
+    showToast('Settings saved successfully!');
+}
+
+// Settings modal event listeners
+settingsBtn.addEventListener('click', () => {
+    settingsModal.style.display = 'block';
+});
+
+closeBtn.addEventListener('click', () => {
+    settingsModal.style.display = 'none';
+});
+
+window.addEventListener('click', (event) => {
+    if (event.target === settingsModal) {
+        settingsModal.style.display = 'none';
+    }
+});
+
+saveSettings.addEventListener('click', () => {
+    saveSettingsToStorage();
+    settingsModal.style.display = 'none';
+});
+
+// Load settings when page loads
+loadSettings();
+
+// Modify the sendMessage function to include settings
+async function sendMessage() {
+    const messageInput = document.getElementById('messageInput');
+    const message = messageInput.value.trim();
+    
+    if (!message) return;
+    
+    // Add user message to chat
+    addMessageToChat('user', message);
+    messageInput.value = '';
+    
+    // Show loading indicator
+    document.getElementById('loadingIndicator').style.display = 'flex';
+    
+    try {
+        const response = await fetch('/api/chat', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                message: message,
+                session_id: sessionId,
+                settings: currentSettings
+            }),
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to send message');
+        }
+        
+        const data = await response.json();
+        
+        // Add assistant message to chat
+        addMessageToChat('assistant', data.message);
+        
+        // Update cart if there's a cart summary
+        if (data.cart_summary) {
+            updateCart(data.cart_summary);
+        }
+        
+    } catch (error) {
+        console.error('Error:', error);
+        showToast('Error sending message. Please try again.');
+    } finally {
+        document.getElementById('loadingIndicator').style.display = 'none';
+    }
+}

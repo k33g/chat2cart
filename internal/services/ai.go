@@ -23,6 +23,8 @@ type AIService struct {
 	client         *openai.Client
 	productService *ProductService
 	cartService    *CartService
+	defaultModel   string
+	defaultBaseURL string
 }
 
 type loggingReadCloser struct {
@@ -83,11 +85,13 @@ func NewAIService(apiKey string, productService *ProductService, cartService *Ca
 		client:         &client,
 		productService: productService,
 		cartService:    cartService,
+		defaultModel:   "gpt-4",
+		defaultBaseURL: "https://api.openai.com/v1",
 	}
 }
 
 // ProcessChatMessage processes a chat message and returns a response
-func (ai *AIService) ProcessChatMessage(ctx context.Context, sessionID string, session *models.ChatSession) (*models.ChatResponse, error) {
+func (ai *AIService) ProcessChatMessage(ctx context.Context, sessionID string, session *models.ChatSession, settings *models.OpenAISettings) (*models.ChatResponse, error) {
 	// Define the tools available to the AI
 	tools := ai.getToolDefinitions()
 
@@ -102,10 +106,16 @@ func (ai *AIService) ProcessChatMessage(ctx context.Context, sessionID string, s
 	maxIterations := 5
 	currentIteration := 0
 
+	// Use provided settings or defaults
+	model := ai.defaultModel
+	if settings != nil && settings.Model != "" {
+		model = settings.Model
+	}
+
 	for currentIteration < maxIterations {
 		// Create the chat completion request
 		completion, err := ai.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
-			Model:       openai.ChatModelGPT4o,
+			Model:       openai.ChatModel(model),
 			Messages:    messages,
 			Tools:       tools,
 			Temperature: param.Opt[float64]{Value: 0.00000000000001},

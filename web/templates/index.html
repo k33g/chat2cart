@@ -12,7 +12,36 @@
         <header class="header">
             <h1>🛒 chat2cart</h1>
             <p>Your AI-powered shopping assistant</p>
+            <button id="settingsBtn" class="settings-btn">
+                <i class="fas fa-cog"></i>
+            </button>
         </header>
+
+        <!-- Settings Modal -->
+        <div id="settingsModal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2><i class="fas fa-cog"></i> Settings</h2>
+                    <button class="close-btn">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="settings-group">
+                        <label for="modelSelect">AI Model:</label>
+                        <select id="modelSelect" class="settings-input">
+                            <option value="gpt-4">GPT-4</option>
+                            <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+                        </select>
+                    </div>
+                    <div class="settings-group">
+                        <label for="apiBaseUrl">OpenAI API Base URL:</label>
+                        <input type="text" id="apiBaseUrl" class="settings-input" placeholder="https://api.openai.com/v1">
+                    </div>
+                    <div class="settings-actions">
+                        <button id="saveSettings" class="primary-btn">Save Settings</button>
+                    </div>
+                </div>
+            </div>
+        </div>
 
         <div class="main-content">
             <!-- Chat Section -->

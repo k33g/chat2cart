@@ -52,7 +52,7 @@ func (h *ChatHandler) PostMessage(c *gin.Context) {
 	session.AddMessage(userMessage)
 
 	// Process message with AI
-	response, err := h.aiService.ProcessChatMessage(c.Request.Context(), req.SessionID, session)
+	response, err := h.aiService.ProcessChatMessage(c.Request.Context(), req.SessionID, session, req.Settings)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process message"})
 		return
