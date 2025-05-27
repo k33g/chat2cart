@@ -125,7 +125,7 @@ func (ai *AIService) ProcessChatMessage(ctx context.Context, sessionID string, s
 		}
 
 		// Add the model's function call message to the conversation
-		messages = append(messages, openai.AssistantMessage(choice.Message.Content))
+		messages = append(messages, choice.Message.ToParam())
 
 		// Execute tool calls
 		iterationResults, err := ai.executeToolCalls(ctx, choice.Message.ToolCalls, sessionID)
@@ -146,7 +146,7 @@ func (ai *AIService) ProcessChatMessage(ctx context.Context, sessionID string, s
 			}
 
 			// Add the function call output message
-			messages = append(messages, openai.AssistantMessage(string(resultJSON)))
+			messages = append(messages, openai.ToolMessage(string(resultJSON), result.CallID))
 		}
 
 		currentIteration++
@@ -154,9 +154,7 @@ func (ai *AIService) ProcessChatMessage(ctx context.Context, sessionID string, s
 
 	// If we hit the maximum iterations, add a warning message
 	if currentIteration >= maxIterations {
-		warningMsg := "I've reached the maximum number of operations I can perform. Let me know if you need anything else!"
-		messages = append(messages, openai.AssistantMessage(warningMsg))
-		responseMessage = warningMsg
+		responseMessage = "I've reached the maximum number of operations I can perform. Let me know if you need anything else!"
 	}
 
 	// Get the final cart summary after all tool executions
@@ -169,64 +167,6 @@ func (ai *AIService) ProcessChatMessage(ctx context.Context, sessionID string, s
 		Timestamp:   time.Now(),
 		ToolCalls:   toolResults,
 	}, nil
-}
-
-// formatToolResult formats a tool execution result into a natural language message
-func (ai *AIService) formatToolResult(result models.ToolCallResult) string {
-	var message strings.Builder
-
-	switch result.ToolName {
-	case "search_products":
-		if results, ok := result.Result.([]*models.ProductSearchResult); ok {
-			message.WriteString(fmt.Sprintf("I found %d products:\n", len(results)))
-			for _, result := range results {
-				message.WriteString(fmt.Sprintf("- %s: $%.2f\n", result.Product.Name, result.Product.Price))
-			}
-		}
-	case "add_to_cart":
-		if summary, ok := result.Result.(*models.CartSummary); ok {
-			message.WriteString("I've added the items to your cart:\n")
-			for _, item := range summary.Items {
-				message.WriteString(fmt.Sprintf("- %s x%d: $%.2f\n", item.Product.Name, item.Quantity, item.GetSubtotal()))
-			}
-		}
-	case "remove_from_cart":
-		if summary, ok := result.Result.(*models.CartSummary); ok {
-			message.WriteString("I've removed the items from your cart:\n")
-			for _, item := range summary.Items {
-				message.WriteString(fmt.Sprintf("- %s x%d: $%.2f\n", item.Product.Name, item.Quantity, item.GetSubtotal()))
-			}
-		}
-	case "view_cart":
-		if summary, ok := result.Result.(*models.CartSummary); ok {
-			message.WriteString("Here's your current cart:\n")
-			for _, item := range summary.Items {
-				message.WriteString(fmt.Sprintf("- %s x%d: $%.2f\n", item.Product.Name, item.Quantity, item.GetSubtotal()))
-			}
-			message.WriteString(fmt.Sprintf("Total: $%.2f\n", summary.Total))
-		}
-	case "update_quantity":
-		if summary, ok := result.Result.(*models.CartSummary); ok {
-			message.WriteString("I've updated the quantities in your cart:\n")
-			for _, item := range summary.Items {
-				message.WriteString(fmt.Sprintf("- %s x%d: $%.2f\n", item.Product.Name, item.Quantity, item.GetSubtotal()))
-			}
-		}
-	case "checkout":
-		if checkoutResult, ok := result.Result.(*CheckoutResult); ok {
-			message.WriteString(fmt.Sprintf("Checkout completed successfully!\nOrder ID: %s\nStatus: %s\n", checkoutResult.OrderID, checkoutResult.Status))
-			message.WriteString("Items purchased:\n")
-			for _, item := range checkoutResult.CartSummary.Items {
-				message.WriteString(fmt.Sprintf("- %s x%d: $%.2f\n", item.Product.Name, item.Quantity, item.GetSubtotal()))
-			}
-		}
-	}
-
-	if !result.Success {
-		message.WriteString(fmt.Sprintf("Error: %s", result.Error))
-	}
-
-	return message.String()
 }
 
 // getSystemPrompt returns the system prompt for the AI
@@ -381,22 +321,24 @@ func (ai *AIService) executeToolCalls(ctx context.Context, toolCalls []openai.Ch
 func (ai *AIService) executeToolCall(ctx context.Context, toolCall openai.ChatCompletionMessageToolCall, sessionID string) models.ToolCallResult {
 	functionName := toolCall.Function.Name
 	arguments := toolCall.Function.Arguments
+	toolCallID := toolCall.ID
 
 	switch functionName {
 	case "search_products":
-		return ai.handleSearchProducts(arguments)
+		return ai.handleSearchProducts(arguments, toolCallID)
 	case "add_to_cart":
-		return ai.handleAddToCart(arguments, sessionID)
+		return ai.handleAddToCart(arguments, sessionID, toolCallID)
 	case "remove_from_cart":
-		return ai.handleRemoveFromCart(arguments, sessionID)
+		return ai.handleRemoveFromCart(arguments, sessionID, toolCallID)
 	case "view_cart":
-		return ai.handleViewCart(sessionID)
+		return ai.handleViewCart(sessionID, toolCallID)
 	case "update_quantity":
-		return ai.handleUpdateQuantity(arguments, sessionID)
+		return ai.handleUpdateQuantity(arguments, sessionID, toolCallID)
 	case "checkout":
-		return ai.handleCheckout(sessionID)
+		return ai.handleCheckout(sessionID, toolCallID)
 	default:
 		return models.ToolCallResult{
+			CallID:    toolCallID,
 			ToolName:  functionName,
 			Success:   false,
 			Error:     fmt.Sprintf("Unknown tool: %s", functionName),
@@ -406,7 +348,7 @@ func (ai *AIService) executeToolCall(ctx context.Context, toolCall openai.ChatCo
 }
 
 // Tool call handlers
-func (ai *AIService) handleSearchProducts(arguments string) models.ToolCallResult {
+func (ai *AIService) handleSearchProducts(arguments string, toolCallID string) models.ToolCallResult {
 	var args struct {
 		Query    string `json:"query"`
 		Category string `json:"category"`
@@ -415,6 +357,7 @@ func (ai *AIService) handleSearchProducts(arguments string) models.ToolCallResul
 
 	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
 		return models.ToolCallResult{
+			CallID:    toolCallID,
 			ToolName:  "search_products",
 			Success:   false,
 			Error:     "Invalid arguments",
@@ -435,6 +378,7 @@ func (ai *AIService) handleSearchProducts(arguments string) models.ToolCallResul
 	results, err := ai.productService.SearchProducts(filter)
 	if err != nil {
 		return models.ToolCallResult{
+			CallID:    toolCallID,
 			ToolName:  "search_products",
 			Success:   false,
 			Error:     err.Error(),
@@ -443,6 +387,7 @@ func (ai *AIService) handleSearchProducts(arguments string) models.ToolCallResul
 	}
 
 	return models.ToolCallResult{
+		CallID:    toolCallID,
 		ToolName:  "search_products",
 		Success:   true,
 		Result:    results,
@@ -450,7 +395,7 @@ func (ai *AIService) handleSearchProducts(arguments string) models.ToolCallResul
 	}
 }
 
-func (ai *AIService) handleAddToCart(arguments string, sessionID string) models.ToolCallResult {
+func (ai *AIService) handleAddToCart(arguments string, sessionID string, toolCallID string) models.ToolCallResult {
 	var args struct {
 		ProductName string `json:"product_name"`
 		Quantity    int    `json:"quantity"`
@@ -458,6 +403,7 @@ func (ai *AIService) handleAddToCart(arguments string, sessionID string) models.
 
 	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
 		return models.ToolCallResult{
+			CallID:    toolCallID,
 			ToolName:  "add_to_cart",
 			Success:   false,
 			Error:     "Invalid arguments",
@@ -472,6 +418,7 @@ func (ai *AIService) handleAddToCart(arguments string, sessionID string) models.
 	cartSummary, err := ai.cartService.AddToCart(sessionID, args.ProductName, args.Quantity)
 	if err != nil {
 		return models.ToolCallResult{
+			CallID:    toolCallID,
 			ToolName:  "add_to_cart",
 			Success:   false,
 			Error:     err.Error(),
@@ -480,6 +427,7 @@ func (ai *AIService) handleAddToCart(arguments string, sessionID string) models.
 	}
 
 	return models.ToolCallResult{
+		CallID:    toolCallID,
 		ToolName:  "add_to_cart",
 		Success:   true,
 		Result:    cartSummary,
@@ -487,13 +435,14 @@ func (ai *AIService) handleAddToCart(arguments string, sessionID string) models.
 	}
 }
 
-func (ai *AIService) handleRemoveFromCart(arguments string, sessionID string) models.ToolCallResult {
+func (ai *AIService) handleRemoveFromCart(arguments string, sessionID string, toolCallID string) models.ToolCallResult {
 	var args struct {
 		ProductName string `json:"product_name"`
 	}
 
 	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
 		return models.ToolCallResult{
+			CallID:    toolCallID,
 			ToolName:  "remove_from_cart",
 			Success:   false,
 			Error:     "Invalid arguments",
@@ -504,6 +453,7 @@ func (ai *AIService) handleRemoveFromCart(arguments string, sessionID string) mo
 	cartSummary, err := ai.cartService.RemoveFromCart(sessionID, args.ProductName)
 	if err != nil {
 		return models.ToolCallResult{
+			CallID:    toolCallID,
 			ToolName:  "remove_from_cart",
 			Success:   false,
 			Error:     err.Error(),
@@ -512,6 +462,7 @@ func (ai *AIService) handleRemoveFromCart(arguments string, sessionID string) mo
 	}
 
 	return models.ToolCallResult{
+		CallID:    toolCallID,
 		ToolName:  "remove_from_cart",
 		Success:   true,
 		Result:    cartSummary,
@@ -519,9 +470,10 @@ func (ai *AIService) handleRemoveFromCart(arguments string, sessionID string) mo
 	}
 }
 
-func (ai *AIService) handleViewCart(sessionID string) models.ToolCallResult {
+func (ai *AIService) handleViewCart(sessionID string, toolCallID string) models.ToolCallResult {
 	cartSummary := ai.cartService.GetCartSummary(sessionID)
 	return models.ToolCallResult{
+		CallID:    toolCallID,
 		ToolName:  "view_cart",
 		Success:   true,
 		Result:    cartSummary,
@@ -529,7 +481,7 @@ func (ai *AIService) handleViewCart(sessionID string) models.ToolCallResult {
 	}
 }
 
-func (ai *AIService) handleUpdateQuantity(arguments string, sessionID string) models.ToolCallResult {
+func (ai *AIService) handleUpdateQuantity(arguments string, sessionID string, toolCallID string) models.ToolCallResult {
 	var args struct {
 		ProductName string `json:"product_name"`
 		Quantity    int    `json:"quantity"`
@@ -547,6 +499,7 @@ func (ai *AIService) handleUpdateQuantity(arguments string, sessionID string) mo
 	cartSummary, err := ai.cartService.UpdateQuantity(sessionID, args.ProductName, args.Quantity)
 	if err != nil {
 		return models.ToolCallResult{
+			CallID:    toolCallID,
 			ToolName:  "update_quantity",
 			Success:   false,
 			Error:     err.Error(),
@@ -555,6 +508,7 @@ func (ai *AIService) handleUpdateQuantity(arguments string, sessionID string) mo
 	}
 
 	return models.ToolCallResult{
+		CallID:    toolCallID,
 		ToolName:  "update_quantity",
 		Success:   true,
 		Result:    cartSummary,
@@ -562,10 +516,11 @@ func (ai *AIService) handleUpdateQuantity(arguments string, sessionID string) mo
 	}
 }
 
-func (ai *AIService) handleCheckout(sessionID string) models.ToolCallResult {
+func (ai *AIService) handleCheckout(sessionID string, toolCallID string) models.ToolCallResult {
 	checkoutResult, err := ai.cartService.CheckoutCart(sessionID)
 	if err != nil {
 		return models.ToolCallResult{
+			CallID:    toolCallID,
 			ToolName:  "checkout",
 			Success:   false,
 			Error:     err.Error(),
@@ -574,6 +529,7 @@ func (ai *AIService) handleCheckout(sessionID string) models.ToolCallResult {
 	}
 
 	return models.ToolCallResult{
+		CallID:    toolCallID,
 		ToolName:  "checkout",
 		Success:   true,
 		Result:    checkoutResult,

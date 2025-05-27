@@ -90,6 +90,7 @@ type ChatResponse struct {
 
 // ToolCallResult represents the result of a tool call
 type ToolCallResult struct {
+	CallID    string      `json:"call_id"`
 	ToolName  string      `json:"tool_name"`
 	Success   bool        `json:"success"`
 	Result    interface{} `json:"result,omitempty"`
