@@ -465,7 +465,7 @@ const providerModels = {
         { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo' }
     ],
     'http://localhost:11434/v1': [], // Will be populated dynamically
-    'http://localhost:12434/v1': []  // Will be populated dynamically
+    'http://localhost:12434/engines/v1': []  // Will be populated dynamically
 };
 
 // DOM Elements for settings
@@ -499,10 +499,15 @@ async function updateModelSelector(apiBaseUrl) {
     // Get models for the selected provider
     let models = providerModels[apiBaseUrl];
     
-    // If it's Ollama, fetch available models
-    if (apiBaseUrl === 'http://localhost:11434/v1') {
+    // If it's Ollama or DMR, fetch available models
+    if (apiBaseUrl === 'http://localhost:11434/v1' || apiBaseUrl === 'http://localhost:12434/engines/v1') {
         try {
-            const response = await fetch('http://localhost:11434/v1/models');
+            // Use different endpoints for Ollama and DMR
+            const endpoint = apiBaseUrl === 'http://localhost:11434/v1' 
+                ? 'http://localhost:11434/v1/models'
+                : 'http://localhost:12434/engines/v1/models';
+                
+            const response = await fetch(endpoint);
             if (response.ok) {
                 const data = await response.json();
                 models = data.data.map(model => ({
@@ -513,8 +518,8 @@ async function updateModelSelector(apiBaseUrl) {
                 providerModels[apiBaseUrl] = models;
             }
         } catch (error) {
-            console.error('Error fetching Ollama models:', error);
-            showToast('Failed to fetch available models from Ollama', 'error');
+            console.error(`Error fetching models from ${apiBaseUrl}:`, error);
+            window.chat.showToast(`Failed to fetch available models from ${apiBaseUrl === 'http://localhost:11434/v1' ? 'Ollama' : 'DMR'}`, 'error');
         }
     }
     
