@@ -214,6 +214,26 @@ body {
     border-bottom-left-radius: 4px;
 }
 
+.think-content {
+    margin: 12px 0;
+    padding: 12px;
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 8px;
+    font-size: 0.9em;
+}
+
+.think-header {
+    font-weight: 600;
+    color: #495057;
+    margin-bottom: 8px;
+}
+
+.think-body {
+    color: #6c757d;
+    white-space: pre-wrap;
+}
+
 /* Cart section */
 .cart-section {
     background: white;

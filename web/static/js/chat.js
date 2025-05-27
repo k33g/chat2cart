@@ -213,7 +213,18 @@ class Chat2Cart {
     }
 
     formatMessage(content) {
-        return content
+        // First extract and format think content if present
+        const thinkMatch = content.match(/<think>([\s\S]*?)<\/think>/);
+        let formattedContent = content;
+        
+        if (thinkMatch) {
+            const thinkContent = thinkMatch[1].trim();
+            const formattedThink = `<div class="think-content"><div class="think-header">🤔 Thinking Process:</div><div class="think-body">${thinkContent}</div></div>`;
+            formattedContent = content.replace(/<think>[\s\S]*?<\/think>/, formattedThink);
+        }
+        
+        // Then apply other formatting
+        return formattedContent
             .replace(/\n/g, '<br>')
             .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
             .replace(/\*(.*?)\*/g, '<em>$1</em>');
