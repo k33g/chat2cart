@@ -87,165 +87,146 @@ func NewAIService(apiKey string, productService *ProductService, cartService *Ca
 }
 
 // ProcessChatMessage processes a chat message and returns a response
-func (ai *AIService) ProcessChatMessage(ctx context.Context, message, sessionID string, session *models.ChatSession) (*models.ChatResponse, error) {
+func (ai *AIService) ProcessChatMessage(ctx context.Context, sessionID string, session *models.ChatSession) (*models.ChatResponse, error) {
 	// Define the tools available to the AI
 	tools := ai.getToolDefinitions()
 
 	// Build messages including conversation history
 	messages := ai.buildMessagesFromSession(session)
 
-	// Create the chat completion request
-	completion, err := ai.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
-		Model:       openai.ChatModelGPT4o,
-		Messages:    messages,
-		Tools:       tools,
-		Temperature: param.Opt[float64]{Value: 0.00000000000001},
-	})
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to get AI response: %w", err)
-	}
-
-	// Process the response
-	choice := completion.Choices[0]
-	responseMessage := choice.Message.Content
-
-	// Handle tool calls if any
 	var cartSummary *models.CartSummary
 	var toolResults []models.ToolCallResult
-	if len(choice.Message.ToolCalls) > 0 {
-		var err error
-		toolResults, err = ai.executeToolCalls(ctx, choice.Message.ToolCalls, sessionID)
+	var responseMessage string
+
+	// Maximum number of tool call iterations
+	maxIterations := 5
+	currentIteration := 0
+
+	for currentIteration < maxIterations {
+		// Create the chat completion request
+		completion, err := ai.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+			Model:       openai.ChatModelGPT4o,
+			Messages:    messages,
+			Tools:       tools,
+			Temperature: param.Opt[float64]{Value: 0.00000000000001},
+		})
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to get AI response: %w", err)
+		}
+
+		// Process the response
+		choice := completion.Choices[0]
+		responseMessage = choice.Message.Content
+
+		// If no tool calls, we're done
+		if len(choice.Message.ToolCalls) == 0 {
+			break
+		}
+
+		// Add the model's function call message to the conversation
+		messages = append(messages, openai.AssistantMessage(choice.Message.Content))
+
+		// Execute tool calls
+		iterationResults, err := ai.executeToolCalls(ctx, choice.Message.ToolCalls, sessionID)
 		if err != nil {
 			log.Printf("Error executing tool calls: %v", err)
 		}
 
-		// Get updated cart summary after tool execution
-		cartSummary = ai.cartService.GetCartSummary(sessionID)
+		// Add results to our collection
+		toolResults = append(toolResults, iterationResults...)
 
-		// If we have tool results, create a follow-up completion to generate a natural response
-		if len(toolResults) > 0 {
-			followUpCompletion, err := ai.createFollowUpResponse(ctx, message, toolResults, cartSummary)
+		// Add tool results to the conversation as function call outputs
+		for _, result := range iterationResults {
+			// Convert the result to JSON string
+			resultJSON, err := json.Marshal(result.Result)
 			if err != nil {
-				log.Printf("Error creating follow-up response: %v", err)
-			} else {
-				responseMessage = followUpCompletion
+				log.Printf("Error marshaling tool result: %v", err)
+				continue
 			}
+
+			// Add the function call output message
+			messages = append(messages, openai.AssistantMessage(string(resultJSON)))
 		}
+
+		currentIteration++
 	}
+
+	// If we hit the maximum iterations, add a warning message
+	if currentIteration >= maxIterations {
+		warningMsg := "I've reached the maximum number of operations I can perform. Let me know if you need anything else!"
+		messages = append(messages, openai.AssistantMessage(warningMsg))
+		responseMessage = warningMsg
+	}
+
+	// Get the final cart summary after all tool executions
+	cartSummary = ai.cartService.GetCartSummary(sessionID)
 
 	return &models.ChatResponse{
 		Message:     responseMessage,
 		SessionID:   sessionID,
 		CartSummary: cartSummary,
-		Timestamp:   time.Unix(completion.Created, 0),
+		Timestamp:   time.Now(),
 		ToolCalls:   toolResults,
 	}, nil
 }
 
-// StreamChatMessage processes a chat message and streams the response
-func (ai *AIService) StreamChatMessage(ctx context.Context, message, sessionID string, session *models.ChatSession, writer func(string)) (*models.ChatResponse, error) {
-	// Define the tools available to the AI
-	tools := ai.getToolDefinitions()
+// formatToolResult formats a tool execution result into a natural language message
+func (ai *AIService) formatToolResult(result models.ToolCallResult) string {
+	var message strings.Builder
 
-	// Build messages including conversation history
-	messages := ai.buildMessagesFromSession(session)
-
-	// Create the streaming chat completion request with tools
-	stream := ai.client.Chat.Completions.NewStreaming(ctx, openai.ChatCompletionNewParams{
-		Model:       openai.ChatModelGPT4o,
-		Messages:    messages,
-		Tools:       tools,
-		Temperature: param.Opt[float64]{Value: 0.00000000000001},
-	})
-
-	var responseMessage strings.Builder
-	var created int64
-	var toolCalls []openai.ChatCompletionMessageToolCall
-	var toolCallID string
-
-	// Process the stream
-	for stream.Next() {
-		chunk := stream.Current()
-		created = chunk.Created
-
-		if len(chunk.Choices) > 0 {
-			choice := chunk.Choices[0]
-
-			// Handle content streaming
-			if choice.Delta.Content != "" {
-				content := choice.Delta.Content
-				responseMessage.WriteString(content)
-				// Write each token immediately
-				writer(content)
+	switch result.ToolName {
+	case "search_products":
+		if results, ok := result.Result.([]*models.ProductSearchResult); ok {
+			message.WriteString(fmt.Sprintf("I found %d products:\n", len(results)))
+			for _, result := range results {
+				message.WriteString(fmt.Sprintf("- %s: $%.2f\n", result.Product.Name, result.Product.Price))
 			}
-
-			// Handle tool calls
-			if len(choice.Delta.ToolCalls) > 0 {
-				for _, toolCall := range choice.Delta.ToolCalls {
-					if toolCallID == "" {
-						toolCallID = toolCall.ID
-						toolCalls = append(toolCalls, openai.ChatCompletionMessageToolCall{
-							ID: toolCall.ID,
-							Function: openai.ChatCompletionMessageToolCallFunction{
-								Name:      toolCall.Function.Name,
-								Arguments: toolCall.Function.Arguments,
-							},
-						})
-					} else {
-						// Append to existing tool call
-						for i, existingCall := range toolCalls {
-							if existingCall.ID == toolCall.ID {
-								toolCalls[i].Function.Arguments += toolCall.Function.Arguments
-								break
-							}
-						}
-					}
-				}
+		}
+	case "add_to_cart":
+		if summary, ok := result.Result.(*models.CartSummary); ok {
+			message.WriteString("I've added the items to your cart:\n")
+			for _, item := range summary.Items {
+				message.WriteString(fmt.Sprintf("- %s x%d: $%.2f\n", item.Product.Name, item.Quantity, item.GetSubtotal()))
+			}
+		}
+	case "remove_from_cart":
+		if summary, ok := result.Result.(*models.CartSummary); ok {
+			message.WriteString("I've removed the items from your cart:\n")
+			for _, item := range summary.Items {
+				message.WriteString(fmt.Sprintf("- %s x%d: $%.2f\n", item.Product.Name, item.Quantity, item.GetSubtotal()))
+			}
+		}
+	case "view_cart":
+		if summary, ok := result.Result.(*models.CartSummary); ok {
+			message.WriteString("Here's your current cart:\n")
+			for _, item := range summary.Items {
+				message.WriteString(fmt.Sprintf("- %s x%d: $%.2f\n", item.Product.Name, item.Quantity, item.GetSubtotal()))
+			}
+			message.WriteString(fmt.Sprintf("Total: $%.2f\n", summary.Total))
+		}
+	case "update_quantity":
+		if summary, ok := result.Result.(*models.CartSummary); ok {
+			message.WriteString("I've updated the quantities in your cart:\n")
+			for _, item := range summary.Items {
+				message.WriteString(fmt.Sprintf("- %s x%d: $%.2f\n", item.Product.Name, item.Quantity, item.GetSubtotal()))
+			}
+		}
+	case "checkout":
+		if checkoutResult, ok := result.Result.(*CheckoutResult); ok {
+			message.WriteString(fmt.Sprintf("Checkout completed successfully!\nOrder ID: %s\nStatus: %s\n", checkoutResult.OrderID, checkoutResult.Status))
+			message.WriteString("Items purchased:\n")
+			for _, item := range checkoutResult.CartSummary.Items {
+				message.WriteString(fmt.Sprintf("- %s x%d: $%.2f\n", item.Product.Name, item.Quantity, item.GetSubtotal()))
 			}
 		}
 	}
 
-	if stream.Err() != nil {
-		return nil, fmt.Errorf("streaming error: %w", stream.Err())
+	if !result.Success {
+		message.WriteString(fmt.Sprintf("Error: %s", result.Error))
 	}
 
-	finalMessage := responseMessage.String()
-	var toolResults []models.ToolCallResult
-	var cartSummary *models.CartSummary
-
-	// Execute tool calls if any were received
-	if len(toolCalls) > 0 {
-		writer("\n\n🔧 Processing tools...")
-		toolResults, err := ai.executeToolCalls(ctx, toolCalls, sessionID)
-		if err != nil {
-			log.Printf("Error executing tool calls: %v", err)
-		} else {
-			cartSummary = ai.cartService.GetCartSummary(sessionID)
-
-			if len(toolResults) > 0 {
-				writer("\n\n💭 Generating response...")
-				followUpCompletion, err := ai.createFollowUpResponse(ctx, message, toolResults, cartSummary)
-				if err != nil {
-					log.Printf("Error creating follow-up response: %v", err)
-				} else {
-					writer("\n\n" + followUpCompletion)
-					finalMessage = finalMessage + "\n\n" + followUpCompletion
-				}
-			}
-		}
-	} else {
-		// If no tool calls, get current cart summary
-		cartSummary = ai.cartService.GetCartSummary(sessionID)
-	}
-
-	return &models.ChatResponse{
-		Message:     finalMessage,
-		SessionID:   sessionID,
-		CartSummary: cartSummary,
-		Timestamp:   time.Unix(created, 0),
-		ToolCalls:   toolResults,
-	}, nil
+	return message.String()
 }
 
 // getSystemPrompt returns the system prompt for the AI
@@ -329,12 +310,12 @@ func (ai *AIService) getToolDefinitions() []openai.ChatCompletionToolParam {
 				Parameters: openai.FunctionParameters{
 					"type": "object",
 					"properties": map[string]interface{}{
-						"product_id": map[string]interface{}{
+						"product_name": map[string]interface{}{
 							"type":        "string",
-							"description": "The ID of the product to remove",
+							"description": "The name of the product to remove",
 						},
 					},
-					"required": []string{"product_id"},
+					"required": []string{"product_name"},
 				},
 			},
 		},
@@ -357,16 +338,16 @@ func (ai *AIService) getToolDefinitions() []openai.ChatCompletionToolParam {
 				Parameters: openai.FunctionParameters{
 					"type": "object",
 					"properties": map[string]interface{}{
-						"product_id": map[string]interface{}{
+						"product_name": map[string]interface{}{
 							"type":        "string",
-							"description": "The ID of the product to update",
+							"description": "The name of the product to update",
 						},
 						"quantity": map[string]interface{}{
 							"type":        "integer",
 							"description": "New quantity (use 0 to remove)",
 						},
 					},
-					"required": []string{"product_id", "quantity"},
+					"required": []string{"product_name", "quantity"},
 				},
 			},
 		},
@@ -488,7 +469,7 @@ func (ai *AIService) handleAddToCart(arguments string, sessionID string) models.
 		args.Quantity = 1
 	}
 
-	cartSummary, err := ai.cartService.AddProductByName(sessionID, args.ProductName, args.Quantity)
+	cartSummary, err := ai.cartService.AddToCart(sessionID, args.ProductName, args.Quantity)
 	if err != nil {
 		return models.ToolCallResult{
 			ToolName:  "add_to_cart",
@@ -508,7 +489,7 @@ func (ai *AIService) handleAddToCart(arguments string, sessionID string) models.
 
 func (ai *AIService) handleRemoveFromCart(arguments string, sessionID string) models.ToolCallResult {
 	var args struct {
-		ProductID string `json:"product_id"`
+		ProductName string `json:"product_name"`
 	}
 
 	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
@@ -520,7 +501,7 @@ func (ai *AIService) handleRemoveFromCart(arguments string, sessionID string) mo
 		}
 	}
 
-	cartSummary, err := ai.cartService.RemoveFromCart(sessionID, args.ProductID)
+	cartSummary, err := ai.cartService.RemoveFromCart(sessionID, args.ProductName)
 	if err != nil {
 		return models.ToolCallResult{
 			ToolName:  "remove_from_cart",
@@ -550,8 +531,8 @@ func (ai *AIService) handleViewCart(sessionID string) models.ToolCallResult {
 
 func (ai *AIService) handleUpdateQuantity(arguments string, sessionID string) models.ToolCallResult {
 	var args struct {
-		ProductID string `json:"product_id"`
-		Quantity  int    `json:"quantity"`
+		ProductName string `json:"product_name"`
+		Quantity    int    `json:"quantity"`
 	}
 
 	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
@@ -563,7 +544,7 @@ func (ai *AIService) handleUpdateQuantity(arguments string, sessionID string) mo
 		}
 	}
 
-	cartSummary, err := ai.cartService.UpdateQuantity(sessionID, args.ProductID, args.Quantity)
+	cartSummary, err := ai.cartService.UpdateQuantity(sessionID, args.ProductName, args.Quantity)
 	if err != nil {
 		return models.ToolCallResult{
 			ToolName:  "update_quantity",
@@ -620,75 +601,4 @@ func (ai *AIService) buildMessagesFromSession(session *models.ChatSession) []ope
 	}
 
 	return messages
-}
-
-// createFollowUpResponse creates a natural language response based on tool results
-func (ai *AIService) createFollowUpResponse(ctx context.Context, originalMessage string, toolResults []models.ToolCallResult, cartSummary *models.CartSummary) (string, error) {
-	// Create a summary of what happened
-	var actionSummary strings.Builder
-	actionSummary.WriteString("Actions performed:\n")
-
-	for _, result := range toolResults {
-		if result.Success {
-			switch result.ToolName {
-			case "search_products":
-				if results, ok := result.Result.([]*models.ProductSearchResult); ok {
-					actionSummary.WriteString(fmt.Sprintf("- Found %d products:\n", len(results)))
-					for _, result := range results {
-						actionSummary.WriteString(fmt.Sprintf("  * %s - $%.2f\n", result.Product.Name, result.Product.Price))
-					}
-				}
-			case "add_to_cart":
-				if summary, ok := result.Result.(*models.CartSummary); ok {
-					actionSummary.WriteString("- Added items to cart:\n")
-					for _, item := range summary.Items {
-						actionSummary.WriteString(fmt.Sprintf("  * %s x%d - $%.2f\n", item.Product.Name, item.Quantity, item.GetSubtotal()))
-					}
-				}
-			case "remove_from_cart":
-				if summary, ok := result.Result.(*models.CartSummary); ok {
-					actionSummary.WriteString("- Removed items from cart:\n")
-					for _, item := range summary.Items {
-						actionSummary.WriteString(fmt.Sprintf("  * %s x%d - $%.2f\n", item.Product.Name, item.Quantity, item.GetSubtotal()))
-					}
-				}
-			case "update_quantity":
-				if summary, ok := result.Result.(*models.CartSummary); ok {
-					actionSummary.WriteString("- Updated quantities in cart:\n")
-					for _, item := range summary.Items {
-						actionSummary.WriteString(fmt.Sprintf("  * %s x%d - $%.2f\n", item.Product.Name, item.Quantity, item.GetSubtotal()))
-					}
-				}
-			case "checkout":
-				if checkoutResult, ok := result.Result.(*CheckoutResult); ok {
-					actionSummary.WriteString("- Processed checkout:\n")
-					actionSummary.WriteString(fmt.Sprintf("  Order ID: %s\n", checkoutResult.OrderID))
-					actionSummary.WriteString(fmt.Sprintf("  Status: %s\n", checkoutResult.Status))
-					actionSummary.WriteString(fmt.Sprintf("  Message: %s\n", checkoutResult.Message))
-					actionSummary.WriteString("  Items purchased:\n")
-					for _, item := range checkoutResult.CartSummary.Items {
-						actionSummary.WriteString(fmt.Sprintf("  * %s x%d - $%.2f\n", item.Product.Name, item.Quantity, item.GetSubtotal()))
-					}
-				}
-			}
-		} else {
-			actionSummary.WriteString(fmt.Sprintf("- Error with %s: %s\n", result.ToolName, result.Error))
-		}
-	}
-
-	// Create a follow-up completion to generate a natural response
-	completion, err := ai.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
-		Model: openai.ChatModelGPT4o,
-		Messages: []openai.ChatCompletionMessageParamUnion{
-			openai.SystemMessage("You are a helpful shopping assistant. Based on the user's request and the actions that were performed, provide a natural, conversational response. Be friendly and helpful."),
-			openai.UserMessage(fmt.Sprintf("User said: %s\n\n%s\n\nCurrent cart total: $%.2f with %d items",
-				originalMessage, actionSummary.String(), cartSummary.Total, cartSummary.ItemCount)),
-		},
-	})
-
-	if err != nil {
-		return "I've processed your request successfully!", nil
-	}
-
-	return completion.Choices[0].Message.Content, nil
 }

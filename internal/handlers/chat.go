@@ -1,8 +1,6 @@
 package handlers
 
 import (
-	"encoding/json"
-	"fmt"
 	"net/http"
 	"sync"
 	"time"
@@ -54,7 +52,7 @@ func (h *ChatHandler) PostMessage(c *gin.Context) {
 	session.AddMessage(userMessage)
 
 	// Process message with AI
-	response, err := h.aiService.ProcessChatMessage(c.Request.Context(), req.Message, req.SessionID, session)
+	response, err := h.aiService.ProcessChatMessage(c.Request.Context(), req.SessionID, session)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process message"})
 		return
@@ -65,69 +63,6 @@ func (h *ChatHandler) PostMessage(c *gin.Context) {
 	session.AddMessage(aiMessage)
 
 	c.JSON(http.StatusOK, response)
-}
-
-// PostMessageStream handles incoming chat messages with streaming response
-func (h *ChatHandler) PostMessageStream(c *gin.Context) {
-	var req models.ChatRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request format"})
-		return
-	}
-
-	// Generate session ID if not provided
-	if req.SessionID == "" {
-		req.SessionID = generateSessionID()
-	}
-
-	// Get or create chat session
-	session := h.getOrCreateSession(req.SessionID)
-
-	// Add user message to session
-	userMessage := models.NewChatMessage(models.RoleUser, req.Message, req.SessionID)
-	session.AddMessage(userMessage)
-
-	// Set headers for Server-Sent Events
-	c.Header("Content-Type", "text/event-stream")
-	c.Header("Cache-Control", "no-cache")
-	c.Header("Connection", "keep-alive")
-	c.Header("Access-Control-Allow-Origin", "*")
-	c.Header("Access-Control-Allow-Headers", "Cache-Control")
-
-	// Create a writer function for streaming
-	writer := func(content string) {
-		// Send the content as SSE data
-		fmt.Fprintf(c.Writer, "data: %s\n\n", content)
-		c.Writer.Flush()
-	}
-
-	// Process message with AI streaming
-	response, err := h.aiService.StreamChatMessage(c.Request.Context(), req.Message, req.SessionID, session, writer)
-	if err != nil {
-		fmt.Fprintf(c.Writer, "data: [ERROR] Failed to process message: %s\n\n", err.Error())
-		c.Writer.Flush()
-		return
-	}
-
-	// Add AI response to session
-	aiMessage := models.NewChatMessage(models.RoleAssistant, response.Message, req.SessionID)
-	session.AddMessage(aiMessage)
-
-	// Send final response with cart summary
-	if response.CartSummary != nil {
-		cartJSON, err := json.Marshal(response.CartSummary)
-		if err != nil {
-			fmt.Fprintf(c.Writer, "data: [ERROR] Failed to marshal cart update: %s\n\n", err.Error())
-			c.Writer.Flush()
-			return
-		}
-		fmt.Fprintf(c.Writer, "data: [CART_UPDATE] %s\n\n", string(cartJSON))
-		c.Writer.Flush()
-	}
-
-	// Send end signal
-	fmt.Fprintf(c.Writer, "data: [DONE]\n\n")
-	c.Writer.Flush()
 }
 
 // GetSession returns the chat session history
@@ -190,8 +125,8 @@ func (h *ChatHandler) AddToCart(c *gin.Context) {
 	}
 
 	var req struct {
-		ProductID string `json:"product_id" binding:"required"`
-		Quantity  int    `json:"quantity"`
+		ProductName string `json:"product_name" binding:"required"`
+		Quantity    int    `json:"quantity"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -203,7 +138,7 @@ func (h *ChatHandler) AddToCart(c *gin.Context) {
 		req.Quantity = 1
 	}
 
-	cartSummary, err := h.cartService.AddToCart(sessionID, req.ProductID, req.Quantity)
+	cartSummary, err := h.cartService.AddToCart(sessionID, req.ProductName, req.Quantity)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -215,14 +150,14 @@ func (h *ChatHandler) AddToCart(c *gin.Context) {
 // RemoveFromCart handles removing items from cart via API
 func (h *ChatHandler) RemoveFromCart(c *gin.Context) {
 	sessionID := c.Param("sessionId")
-	productID := c.Param("productId")
+	productName := c.Param("productName")
 
-	if sessionID == "" || productID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Session ID and Product ID are required"})
+	if sessionID == "" || productName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Session ID and Product Name are required"})
 		return
 	}
 
-	cartSummary, err := h.cartService.RemoveFromCart(sessionID, productID)
+	cartSummary, err := h.cartService.RemoveFromCart(sessionID, productName)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -234,10 +169,10 @@ func (h *ChatHandler) RemoveFromCart(c *gin.Context) {
 // UpdateQuantity handles updating item quantities via API
 func (h *ChatHandler) UpdateQuantity(c *gin.Context) {
 	sessionID := c.Param("sessionId")
-	productID := c.Param("productId")
+	productName := c.Param("productName")
 
-	if sessionID == "" || productID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Session ID and Product ID are required"})
+	if sessionID == "" || productName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Session ID and Product Name are required"})
 		return
 	}
 
@@ -250,7 +185,7 @@ func (h *ChatHandler) UpdateQuantity(c *gin.Context) {
 		return
 	}
 
-	cartSummary, err := h.cartService.UpdateQuantity(sessionID, productID, req.Quantity)
+	cartSummary, err := h.cartService.UpdateQuantity(sessionID, productName, req.Quantity)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return

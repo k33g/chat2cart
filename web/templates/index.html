@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{.title}} - Streaming vs Non-Streaming Comparison</title>
+    <title>{{.title}} - AI Shopping Assistant</title>
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
     <div class="container">
         <header class="header">
             <h1>🛒 chat2cart</h1>
-            <p>AI-powered shopping assistant - Streaming vs Non-Streaming Comparison</p>
+            <p>AI-powered shopping assistant</p>
         </header>
 
         <div class="main-content">
@@ -18,20 +18,20 @@
             <div class="input-section">
                 <div class="chat-input-container">
                     <div class="chat-input">
-                        <input type="text" id="messageInput" placeholder="Type your message here to test both approaches..." autocomplete="off">
+                        <input type="text" id="messageInput" placeholder="Type your message here..." autocomplete="off">
                         <button id="sendButton" type="button">
-                            <span>Send to Both</span>
+                            <span>Send</span>
                         </button>
                     </div>
                 </div>
             </div>
 
-            <!-- Dual Chat Section -->
-            <div class="dual-chat-section">
+            <!-- Chat Section -->
+            <div class="chat-section">
                 <!-- Non-Streaming Chat -->
                 <div class="chat-panel">
                     <div class="chat-header">
-                        <h2>🐌 Non-Streaming </h2>
+                        <h2>AI Shopping Assistant</h2>
                         <div class="performance-metrics">
                             <span class="status" id="nonStreamingStatus">Ready</span>
                         </div>
@@ -40,28 +40,8 @@
                         <div class="chat-messages" id="nonStreamingMessages">
                             <div class="message assistant">
                                 <div class="message-content">
-                                    <p>👋 Hello! I'm your AI shopping assistant (Non-Streaming mode).</p>
-                                    <p>I will wait until I have the complete response before showing it to you.</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Streaming Chat -->
-                <div class="chat-panel">
-                    <div class="chat-header">
-                        <h2>⚡ Streaming </h2>
-                        <div class="performance-metrics">
-                            <span class="status" id="streamingStatus">Ready</span>
-                        </div>
-                    </div>
-                    <div class="chat-container">
-                        <div class="chat-messages" id="streamingMessages">
-                            <div class="message assistant">
-                                <div class="message-content">
-                                    <p>👋 Hello! I'm your AI shopping assistant (Streaming mode).</p>
-                                    <p>I will show you words as they are generated in real-time!</p>
+                                    <p>👋 Hello! I'm your AI shopping assistant.</p>
+                                    <p>How can I help you today?</p>
                                 </div>
                             </div>
                         </div>

@@ -1,4 +1,4 @@
-class DualChat2Cart {
+class Chat2Cart {
     constructor() {
         this.sessionId = this.generateSessionId();
         this.isLoading = false;
@@ -13,13 +13,9 @@ class DualChat2Cart {
         this.messageInput = document.getElementById('messageInput');
         this.sendButton = document.getElementById('sendButton');
         
-        // Non-streaming elements
-        this.nonStreamingMessages = document.getElementById('nonStreamingMessages');
-        this.nonStreamingStatus = document.getElementById('nonStreamingStatus');
-        
-        // Streaming elements
-        this.streamingMessages = document.getElementById('streamingMessages');
-        this.streamingStatus = document.getElementById('streamingStatus');
+        // Chat elements
+        this.messages = document.getElementById('nonStreamingMessages');
+        this.status = document.getElementById('nonStreamingStatus');
         
         // Cart elements
         this.cartItems = document.getElementById('cartItems');
@@ -36,11 +32,11 @@ class DualChat2Cart {
     }
 
     bindEvents() {
-        this.sendButton.addEventListener('click', () => this.sendToBoth());
+        this.sendButton.addEventListener('click', () => this.sendMessage());
         this.messageInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
-                this.sendToBoth();
+                this.sendMessage();
             }
         });
         this.checkoutBtn.addEventListener('click', () => this.checkout());
@@ -50,32 +46,24 @@ class DualChat2Cart {
         return 'session-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
     }
 
-    async sendToBoth() {
+    async sendMessage() {
         const message = this.messageInput.value.trim();
         if (!message || this.isLoading) return;
 
         this.messageInput.value = '';
         this.setLoading(true);
 
-        // Add user message to both chats
-        this.addMessage(message, 'user', this.nonStreamingMessages);
-        this.addMessage(message, 'user', this.streamingMessages);
+        // Add user message
+        this.addMessage(message, 'user');
 
         // Update status
-        this.updateStatus('nonStreamingStatus', 'processing', 'Processing...');
-        this.updateStatus('streamingStatus', 'processing', 'Streaming...');
-
-        // Start both requests simultaneously
-        const promises = [
-            this.sendNonStreaming(message),
-            this.sendStreaming(message)
-        ];
+        this.updateStatus('processing', 'Processing...');
 
         try {
-            await Promise.all(promises);
+            await this.sendNonStreaming(message);
         } catch (error) {
-            console.error('Error in dual chat:', error);
-            this.showToast('Error processing messages', 'error');
+            console.error('Error in chat:', error);
+            this.showToast('Error processing message', 'error');
         } finally {
             this.setLoading(false);
         }
@@ -103,129 +91,23 @@ class DualChat2Cart {
             // First add tool calls if any
             if (data.tool_calls && data.tool_calls.length > 0) {
                 const toolCallsMessage = this.createToolCallsMessage(data.tool_calls);
-                this.nonStreamingMessages.appendChild(toolCallsMessage);
-                this.scrollToBottom(this.nonStreamingMessages);
+                this.messages.appendChild(toolCallsMessage);
+                this.scrollToBottom();
             }
             
             // Then add the AI response
-            this.addMessage(data.message, 'assistant', this.nonStreamingMessages);
+            this.addMessage(data.message, 'assistant');
             
-            this.updateStatus('nonStreamingStatus', 'complete', 'Complete');
+            this.updateStatus('complete', 'Complete');
             
             if (data.cart_summary) {
                 this.updateCart(data.cart_summary);
             }
         } catch (error) {
-            console.error('Error in non-streaming:', error);
-            this.addMessage('Sorry, I encountered an error. Please try again.', 'assistant', this.nonStreamingMessages);
-            this.updateStatus('nonStreamingStatus', 'error', 'Error');
+            console.error('Error in chat:', error);
+            this.addMessage('Sorry, I encountered an error. Please try again.', 'assistant');
+            this.updateStatus('error', 'Error');
         }
-    }
-
-    async sendStreaming(message) {
-        try {
-            const response = await fetch('/api/v1/chat/message-stream', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    message: message,
-                    session_id: this.sessionId
-                })
-            });
-
-            if (!response.ok) {
-                throw new Error('Failed to send message');
-            }
-
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-            let buffer = '';
-            let currentMessage = '';
-
-            // Create initial message container
-            let messageDiv = document.createElement('div');
-            messageDiv.className = 'message assistant';
-            const contentDiv = document.createElement('div');
-            contentDiv.className = 'message-content';
-            messageDiv.appendChild(contentDiv);
-            this.streamingMessages.appendChild(messageDiv);
-
-            // Add streaming cursor
-            const cursor = document.createElement('span');
-            cursor.className = 'streaming-cursor';
-            cursor.textContent = '▋';
-            contentDiv.appendChild(cursor);
-
-            while (true) {
-                const { value, done } = await reader.read();
-                if (done) break;
-
-                buffer += decoder.decode(value, { stream: true });
-                const lines = buffer.split('\n');
-                buffer = lines.pop() || ''; // Keep the last incomplete line in the buffer
-
-                for (const line of lines) {
-                    if (line.startsWith('data: ')) {
-                        console.log(line);
-                        const data = line.slice(6);
-                        
-                        if (data === '[DONE]') {
-                            // End of stream
-                            cursor.remove();
-                            continue;
-                        }
-
-                        if (data.startsWith('[ERROR]')) {
-                            cursor.remove();
-                            throw new Error(data.slice(8));
-                        }
-
-                        if (data.startsWith('[CART_UPDATE]')) {
-                            try {
-                                const cartData = JSON.parse(data.slice(13));
-                                this.updateCart(cartData);
-                            } catch (e) {
-                                console.error('Error parsing cart update:', e);
-                            }
-                            continue;
-                        }
-
-                        // Regular message content
-                        currentMessage += data;
-                        // Update content before the cursor
-                        contentDiv.innerHTML = this.formatMessage(currentMessage);
-                        contentDiv.appendChild(cursor);
-                        this.scrollToBottom(this.streamingMessages);
-                    }
-                }
-            }
-
-            this.updateStatus('streamingStatus', 'complete', 'Complete');
-        } catch (error) {
-            console.error('Error in streaming:', error);
-            this.addMessage('Sorry, I encountered an error. Please try again.', 'assistant', this.streamingMessages);
-            this.updateStatus('streamingStatus', 'error', 'Error');
-        }
-    }
-
-    updateStreamingMessage(content) {
-        // Find the last assistant message or create a new one
-        let messageDiv = this.streamingMessages.querySelector('.message.assistant:last-child');
-        if (!messageDiv) {
-            messageDiv = document.createElement('div');
-            messageDiv.className = 'message assistant';
-            const contentDiv = document.createElement('div');
-            contentDiv.className = 'message-content';
-            messageDiv.appendChild(contentDiv);
-            this.streamingMessages.appendChild(messageDiv);
-        }
-
-        // Update the content
-        const contentDiv = messageDiv.querySelector('.message-content');
-        contentDiv.innerHTML = this.formatMessage(content);
-        this.scrollToBottom(this.streamingMessages);
     }
 
     createToolCallsMessage(toolCalls) {
@@ -250,7 +132,7 @@ class DualChat2Cart {
         return messageDiv;
     }
 
-    addMessage(content, role, container) {
+    addMessage(content, role) {
         const messageDiv = document.createElement('div');
         messageDiv.className = `message ${role}`;
         
@@ -259,9 +141,9 @@ class DualChat2Cart {
         contentDiv.innerHTML = this.formatMessage(content);
         
         messageDiv.appendChild(contentDiv);
-        container.appendChild(messageDiv);
+        this.messages.appendChild(messageDiv);
         
-        this.scrollToBottom(container);
+        this.scrollToBottom();
     }
 
     createToolCallMessage(toolCall) {
@@ -326,136 +208,6 @@ class DualChat2Cart {
         return toolCallDiv;
     }
 
-    addFunctionCallsToSection(toolCalls, containerId) {
-        const container = document.getElementById(containerId);
-        
-        // Clear the "no tool calls" message if it exists
-        const noToolCallsDiv = container.querySelector('.no-tool-calls');
-        if (noToolCallsDiv) {
-            noToolCallsDiv.remove();
-        }
-        
-        toolCalls.forEach(toolCall => {
-            const callDiv = document.createElement('div');
-            callDiv.className = `tool-call-item ${toolCall.success ? 'success' : 'error'}`;
-            
-            // Function name
-            const nameDiv = document.createElement('div');
-            nameDiv.className = 'tool-call-name';
-            nameDiv.textContent = toolCall.tool_name;
-            callDiv.appendChild(nameDiv);
-            
-            // Parameters (if any)
-            if (toolCall.tool_name !== 'view_cart' && toolCall.tool_name !== 'checkout') {
-                const paramsDiv = document.createElement('div');
-                paramsDiv.className = 'tool-call-params';
-                paramsDiv.innerHTML = '<strong>Parameters:</strong> ' + this.formatFunctionParams(toolCall.tool_name, toolCall.result);
-                callDiv.appendChild(paramsDiv);
-            }
-            
-            // Result
-            const resultDiv = document.createElement('div');
-            resultDiv.className = 'tool-call-result';
-            if (toolCall.success) {
-                resultDiv.innerHTML = '<strong>Result:</strong> ' + this.formatFunctionResult(toolCall);
-            } else {
-                resultDiv.innerHTML = '<strong>Error:</strong> ' + toolCall.error;
-            }
-            callDiv.appendChild(resultDiv);
-            
-            container.appendChild(callDiv);
-        });
-        
-        // Scroll to show the new tool calls
-        container.scrollTop = container.scrollHeight;
-    }
-
-    addFunctionCalls(toolCalls, container) {
-        const functionCallsDiv = document.createElement('div');
-        functionCallsDiv.className = 'function-calls';
-        
-        const headerDiv = document.createElement('div');
-        headerDiv.className = 'function-calls-header';
-        headerDiv.innerHTML = '🔧 Function Calls';
-        functionCallsDiv.appendChild(headerDiv);
-        
-        toolCalls.forEach(toolCall => {
-            const callDiv = document.createElement('div');
-            callDiv.className = `function-call ${toolCall.success ? 'success' : 'error'}`;
-            
-            // Function name
-            const nameDiv = document.createElement('div');
-            nameDiv.className = 'function-name';
-            nameDiv.textContent = toolCall.tool_name;
-            callDiv.appendChild(nameDiv);
-            
-            // Parameters (if any)
-            if (toolCall.tool_name !== 'view_cart' && toolCall.tool_name !== 'checkout') {
-                const paramsDiv = document.createElement('div');
-                paramsDiv.className = 'function-params';
-                paramsDiv.innerHTML = '<strong>Parameters:</strong> ' + this.formatFunctionParams(toolCall.tool_name, toolCall.result);
-                callDiv.appendChild(paramsDiv);
-            }
-            
-            // Result
-            const resultDiv = document.createElement('div');
-            resultDiv.className = 'function-result';
-            if (toolCall.success) {
-                resultDiv.innerHTML = '<strong>Result:</strong> ' + this.formatFunctionResult(toolCall);
-            } else {
-                resultDiv.innerHTML = '<strong>Error:</strong> ' + toolCall.error;
-            }
-            callDiv.appendChild(resultDiv);
-            
-            functionCallsDiv.appendChild(callDiv);
-        });
-        
-        container.appendChild(functionCallsDiv);
-        this.scrollToBottom(container);
-    }
-
-    formatFunctionParams(toolName, result) {
-        switch (toolName) {
-            case 'search_products':
-                // Extract params from the search results context
-                return 'query, category, limit';
-            case 'add_to_cart':
-                return 'product_id, quantity';
-            case 'remove_from_cart':
-                return 'product_id';
-            case 'update_quantity':
-                return 'product_id, quantity';
-            default:
-                return 'none';
-        }
-    }
-
-    formatFunctionResult(toolCall) {
-        if (!toolCall.success) {
-            return toolCall.error;
-        }
-        
-        switch (toolCall.tool_name) {
-            case 'search_products':
-                if (Array.isArray(toolCall.result)) {
-                    return `Found ${toolCall.result.length} products`;
-                }
-                return 'Search completed';
-            case 'add_to_cart':
-                return 'Item added to cart';
-            case 'remove_from_cart':
-                return 'Item removed from cart';
-            case 'update_quantity':
-                return 'Quantity updated';
-            case 'view_cart':
-                return 'Cart viewed';
-            case 'checkout':
-                return 'Checkout processed';
-            default:
-                return 'Function executed';
-        }
-    }
-
     formatMessage(content) {
         return content
             .replace(/\n/g, '<br>')
@@ -463,14 +215,13 @@ class DualChat2Cart {
             .replace(/\*(.*?)\*/g, '<em>$1</em>');
     }
 
-    scrollToBottom(container) {
-        container.scrollTop = container.scrollHeight;
+    scrollToBottom() {
+        this.messages.scrollTop = this.messages.scrollHeight;
     }
 
-    updateStatus(elementId, statusClass, text) {
-        const element = document.getElementById(elementId);
-        element.className = `status ${statusClass}`;
-        element.textContent = text;
+    updateStatus(statusClass, text) {
+        this.status.className = `status ${statusClass}`;
+        this.status.textContent = text;
     }
 
     async loadCart() {
@@ -512,12 +263,12 @@ class DualChat2Cart {
                     <div class="item-name">${item.product.name}</div>
                     <div class="item-price">$${item.product.price.toFixed(2)} each</div>
                     <div class="item-quantity">
-                        <button class="quantity-btn" onclick="dualChat.updateQuantity('${item.product.id}', ${item.quantity - 1})">-</button>
+                        <button class="quantity-btn" onclick="chat.updateQuantity('${item.product.id}', ${item.quantity - 1})">-</button>
                         <span class="quantity-display">${item.quantity}</span>
-                        <button class="quantity-btn" onclick="dualChat.updateQuantity('${item.product.id}', ${item.quantity + 1})">+</button>
+                        <button class="quantity-btn" onclick="chat.updateQuantity('${item.product.id}', ${item.quantity + 1})">+</button>
                     </div>
                 </div>
-                <button class="remove-btn" onclick="dualChat.removeItem('${item.product.id}')">Remove</button>
+                <button class="remove-btn" onclick="chat.removeItem('${item.product.id}')">Remove</button>
             </div>
         `).join('');
     }
@@ -597,8 +348,7 @@ class DualChat2Cart {
                 this.showToast('Order placed successfully!', 'success');
                 
                 const successMessage = `🎉 Congratulations! Your order has been placed successfully!\n\nOrder ID: ${result.order_id}\n${result.message}`;
-                this.addMessage(successMessage, 'assistant', this.nonStreamingMessages);
-                this.addMessage(successMessage, 'assistant', this.streamingMessages);
+                this.addMessage(successMessage, 'assistant');
                 
                 // Clear cart after successful checkout
                 this.updateCart({
@@ -629,7 +379,7 @@ class DualChat2Cart {
         if (loading) {
             this.sendButton.innerHTML = '<span>Processing...</span>';
         } else {
-            this.sendButton.innerHTML = '<span>Send to Both</span>';
+            this.sendButton.innerHTML = '<span>Send</span>';
         }
     }
 
@@ -651,26 +401,49 @@ class DualChat2Cart {
 
 // Initialize the application when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
-    window.dualChat = new DualChat2Cart();
+    // Verify all required elements exist
+    const requiredElements = [
+        'messageInput',
+        'sendButton',
+        'nonStreamingMessages',
+        'nonStreamingStatus',
+        'cartItems',
+        'cartCount',
+        'cartSummary',
+        'subtotal',
+        'tax',
+        'total',
+        'checkoutBtn',
+        'loadingIndicator',
+        'toastContainer'
+    ];
+
+    const missingElements = requiredElements.filter(id => !document.getElementById(id));
+    if (missingElements.length > 0) {
+        console.error('Missing required elements:', missingElements);
+        return;
+    }
+
+    window.chat = new Chat2Cart();
 });
 
 // Handle page visibility changes to reconnect if needed
 document.addEventListener('visibilitychange', () => {
-    if (!document.hidden && window.dualChat) {
-        window.dualChat.loadCart();
+    if (!document.hidden && window.chat) {
+        window.chat.loadCart();
     }
 });
 
 // Handle online/offline events
 window.addEventListener('online', () => {
-    if (window.dualChat) {
-        window.dualChat.showToast('Connection restored', 'success');
-        window.dualChat.loadCart();
+    if (window.chat) {
+        window.chat.showToast('Connection restored', 'success');
+        window.chat.loadCart();
     }
 });
 
 window.addEventListener('offline', () => {
-    if (window.dualChat) {
-        window.dualChat.showToast('Connection lost. Some features may not work.', 'warning');
+    if (window.chat) {
+        window.chat.showToast('Connection lost. Some features may not work.', 'warning');
     }
 });

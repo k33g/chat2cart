@@ -92,27 +92,17 @@ func (ps *ProductService) GetProductsByCategory(category string) []*models.Produ
 	return products
 }
 
-// FindProductByName searches for a product by exact or partial name match
+// FindProductByName searches for a product by name
 func (ps *ProductService) FindProductByName(name string) (*models.Product, error) {
 	ps.mutex.RLock()
 	defer ps.mutex.RUnlock()
 
 	name = strings.ToLower(strings.TrimSpace(name))
-
-	// First try exact match
 	for _, product := range ps.products {
 		if strings.ToLower(product.Name) == name {
 			return product, nil
 		}
 	}
-
-	// Then try partial match
-	for _, product := range ps.products {
-		if strings.Contains(strings.ToLower(product.Name), name) {
-			return product, nil
-		}
-	}
-
 	return nil, fmt.Errorf("product with name '%s' not found", name)
 }
 

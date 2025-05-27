@@ -36,8 +36,8 @@ func (cs *CartService) GetCart(cartID string) *models.Cart {
 }
 
 // AddToCart adds a product to the cart
-func (cs *CartService) AddToCart(cartID, productID string, quantity int) (*models.CartSummary, error) {
-	product, err := cs.productService.GetProduct(productID)
+func (cs *CartService) AddToCart(cartID, productName string, quantity int) (*models.CartSummary, error) {
+	product, err := cs.productService.FindProductByName(productName)
 	if err != nil {
 		return nil, fmt.Errorf("product not found: %w", err)
 	}
@@ -56,13 +56,18 @@ func (cs *CartService) AddToCart(cartID, productID string, quantity int) (*model
 }
 
 // RemoveFromCart removes a product from the cart
-func (cs *CartService) RemoveFromCart(cartID, productID string) (*models.CartSummary, error) {
+func (cs *CartService) RemoveFromCart(cartID, productName string) (*models.CartSummary, error) {
+	product, err := cs.productService.FindProductByName(productName)
+	if err != nil {
+		return nil, fmt.Errorf("product not found: %w", err)
+	}
+
 	cart := cs.GetCart(cartID)
 
 	cs.mutex.Lock()
 	defer cs.mutex.Unlock()
 
-	err := cart.RemoveItem(productID)
+	err = cart.RemoveItem(product.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -71,13 +76,18 @@ func (cs *CartService) RemoveFromCart(cartID, productID string) (*models.CartSum
 }
 
 // UpdateQuantity updates the quantity of a product in the cart
-func (cs *CartService) UpdateQuantity(cartID, productID string, quantity int) (*models.CartSummary, error) {
+func (cs *CartService) UpdateQuantity(cartID, productName string, quantity int) (*models.CartSummary, error) {
+	product, err := cs.productService.FindProductByName(productName)
+	if err != nil {
+		return nil, fmt.Errorf("product not found: %w", err)
+	}
+
 	cart := cs.GetCart(cartID)
 
 	cs.mutex.Lock()
 	defer cs.mutex.Unlock()
 
-	err := cart.UpdateQuantity(productID, quantity)
+	err = cart.UpdateQuantity(product.ID, quantity)
 	if err != nil {
 		return nil, err
 	}
@@ -127,42 +137,10 @@ func (cs *CartService) CheckoutCart(cartID string) (*CheckoutResult, error) {
 	return result, nil
 }
 
-// AddProductByName adds a product to cart by searching for it by name
-func (cs *CartService) AddProductByName(cartID, productName string, quantity int) (*models.CartSummary, error) {
-	product, err := cs.productService.FindProductByName(productName)
-	if err != nil {
-		return nil, fmt.Errorf("product not found: %w", err)
-	}
-
-	return cs.AddToCart(cartID, product.ID, quantity)
-}
-
 // CheckoutResult represents the result of a checkout operation
 type CheckoutResult struct {
 	OrderID     string              `json:"order_id"`
 	CartSummary *models.CartSummary `json:"cart_summary"`
 	Status      string              `json:"status"`
 	Message     string              `json:"message"`
-}
-
-// CartOperation represents different cart operations for tool calling
-type CartOperation string
-
-const (
-	OpAddToCart      CartOperation = "add_to_cart"
-	OpRemoveFromCart CartOperation = "remove_from_cart"
-	OpUpdateQuantity CartOperation = "update_quantity"
-	OpViewCart       CartOperation = "view_cart"
-	OpClearCart      CartOperation = "clear_cart"
-	OpCheckout       CartOperation = "checkout"
-)
-
-// CartOperationResult represents the result of a cart operation
-type CartOperationResult struct {
-	Operation    CartOperation       `json:"operation"`
-	Success      bool                `json:"success"`
-	CartSummary  *models.CartSummary `json:"cart_summary,omitempty"`
-	CheckoutInfo *CheckoutResult     `json:"checkout_info,omitempty"`
-	Message      string              `json:"message"`
-	Error        string              `json:"error,omitempty"`
 }

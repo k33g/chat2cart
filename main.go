@@ -65,14 +65,13 @@ func setupRoutes(router *gin.Engine, chatHandler *handlers.ChatHandler, staticHa
 	{
 		// Chat endpoints
 		api.POST("/chat/message", chatHandler.PostMessage)
-		api.POST("/chat/message-stream", chatHandler.PostMessageStream)
 		api.GET("/chat/session/:sessionId", chatHandler.GetSession)
 
 		// Cart endpoints
 		api.GET("/cart/:sessionId", chatHandler.GetCart)
 		api.POST("/cart/:sessionId/add", chatHandler.AddToCart)
-		api.DELETE("/cart/:sessionId/item/:productId", chatHandler.RemoveFromCart)
-		api.PUT("/cart/:sessionId/item/:productId", chatHandler.UpdateQuantity)
+		api.DELETE("/cart/:sessionId/item/:productName", chatHandler.RemoveFromCart)
+		api.PUT("/cart/:sessionId/item/:productName", chatHandler.UpdateQuantity)
 		api.POST("/cart/:sessionId/checkout", chatHandler.Checkout)
 
 		// Product endpoints
