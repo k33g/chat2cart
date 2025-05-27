@@ -28,13 +28,16 @@
                     <div class="settings-group">
                         <label for="modelSelect">AI Model:</label>
                         <select id="modelSelect" class="settings-input">
-                            <option value="gpt-4">GPT-4</option>
-                            <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+                            <!-- Options will be populated dynamically -->
                         </select>
                     </div>
                     <div class="settings-group">
-                        <label for="apiBaseUrl">OpenAI API Base URL:</label>
-                        <input type="text" id="apiBaseUrl" class="settings-input" placeholder="https://api.openai.com/v1">
+                        <label for="apiBaseUrl">API Provider:</label>
+                        <select id="apiBaseUrl" class="settings-input">
+                            <option value="https://api.openai.com/v1">OpenAI</option>
+                            <option value="http://localhost:11434/v1">Ollama</option>
+                            <option value="http://localhost:12434/v1">DMR</option>
+                        </select>
                     </div>
                     <div class="settings-actions">
                         <button id="saveSettings" class="primary-btn">Save Settings</button>

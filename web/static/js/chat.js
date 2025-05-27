@@ -78,7 +78,11 @@ class Chat2Cart {
                 },
                 body: JSON.stringify({
                     message: message,
-                    session_id: this.sessionId
+                    session_id: this.sessionId,
+                    settings: {
+                        model: modelSelect.value,
+                        api_base_url: apiBaseUrl.value
+                    }
                 })
             });
 
@@ -454,6 +458,16 @@ let currentSettings = {
     apiBaseUrl: 'https://api.openai.com/v1'
 };
 
+// Available models for each provider
+const providerModels = {
+    'https://api.openai.com/v1': [
+        { id: 'gpt-4', name: 'GPT-4' },
+        { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo' }
+    ],
+    'http://localhost:11434/v1': [], // Will be populated dynamically
+    'http://localhost:12434/v1': []  // Will be populated dynamically
+};
+
 // DOM Elements for settings
 const settingsBtn = document.getElementById('settingsBtn');
 const settingsModal = document.getElementById('settingsModal');
@@ -467,8 +481,55 @@ function loadSettings() {
     const savedSettings = localStorage.getItem('chat2cartSettings');
     if (savedSettings) {
         currentSettings = JSON.parse(savedSettings);
-        modelSelect.value = currentSettings.model;
         apiBaseUrl.value = currentSettings.apiBaseUrl;
+        updateModelSelector(currentSettings.apiBaseUrl);
+        modelSelect.value = currentSettings.model;
+    } else {
+        apiBaseUrl.value = currentSettings.apiBaseUrl;
+        updateModelSelector(currentSettings.apiBaseUrl);
+        modelSelect.value = currentSettings.model;
+    }
+}
+
+// Update model selector based on selected API provider
+async function updateModelSelector(apiBaseUrl) {
+    // Clear current options
+    modelSelect.innerHTML = '';
+    
+    // Get models for the selected provider
+    let models = providerModels[apiBaseUrl];
+    
+    // If it's Ollama, fetch available models
+    if (apiBaseUrl === 'http://localhost:11434/v1') {
+        try {
+            const response = await fetch('http://localhost:11434/v1/models');
+            if (response.ok) {
+                const data = await response.json();
+                models = data.data.map(model => ({
+                    id: model.id,
+                    name: model.id // Use the model ID as the display name
+                }));
+                // Cache the models
+                providerModels[apiBaseUrl] = models;
+            }
+        } catch (error) {
+            console.error('Error fetching Ollama models:', error);
+            showToast('Failed to fetch available models from Ollama', 'error');
+        }
+    }
+    
+    // Add options to the selector
+    models.forEach(model => {
+        const option = document.createElement('option');
+        option.value = model.id;
+        option.textContent = model.name;
+        modelSelect.appendChild(option);
+    });
+    
+    // If the current model isn't in the list, select the first available one
+    if (!models.some(model => model.id === currentSettings.model)) {
+        currentSettings.model = models[0]?.id || '';
+        modelSelect.value = currentSettings.model;
     }
 }
 
@@ -479,7 +540,7 @@ function saveSettingsToStorage() {
         apiBaseUrl: apiBaseUrl.value
     };
     localStorage.setItem('chat2cartSettings', JSON.stringify(currentSettings));
-    showToast('Settings saved successfully!');
+    window.chat.showToast('Settings saved successfully!', 'success');
 }
 
 // Settings modal event listeners
@@ -495,6 +556,11 @@ window.addEventListener('click', (event) => {
     if (event.target === settingsModal) {
         settingsModal.style.display = 'none';
     }
+});
+
+// Update model selector when API provider changes
+apiBaseUrl.addEventListener('change', () => {
+    updateModelSelector(apiBaseUrl.value);
 });
 
 saveSettings.addEventListener('click', () => {

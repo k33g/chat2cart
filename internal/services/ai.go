@@ -25,6 +25,7 @@ type AIService struct {
 	cartService    *CartService
 	defaultModel   string
 	defaultBaseURL string
+	apiKey         string
 }
 
 type loggingReadCloser struct {
@@ -87,6 +88,7 @@ func NewAIService(apiKey string, productService *ProductService, cartService *Ca
 		cartService:    cartService,
 		defaultModel:   "gpt-4",
 		defaultBaseURL: "https://api.openai.com/v1",
+		apiKey:         apiKey,
 	}
 }
 
@@ -108,8 +110,21 @@ func (ai *AIService) ProcessChatMessage(ctx context.Context, sessionID string, s
 
 	// Use provided settings or defaults
 	model := ai.defaultModel
-	if settings != nil && settings.Model != "" {
-		model = settings.Model
+	baseURL := ai.defaultBaseURL
+	if settings != nil {
+		if settings.Model != "" {
+			model = settings.Model
+		}
+		if settings.APIBaseURL != "" {
+			baseURL = settings.APIBaseURL
+			// Create a new client with the custom base URL
+			client := openai.NewClient(
+				option.WithAPIKey(ai.apiKey),
+				option.WithBaseURL(baseURL),
+				option.WithMiddleware(Logger),
+			)
+			ai.client = &client
+		}
 	}
 
 	for currentIteration < maxIterations {
