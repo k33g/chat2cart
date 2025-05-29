@@ -9,9 +9,11 @@ import (
 
 // Config holds the application configuration
 type Config struct {
-	OpenAIAPIKey string
-	Port         string
-	Environment  string
+	OpenAIAPIKey    string
+	Port            string
+	Environment     string
+	DMR_BASE_URL    string
+	OLLAMA_BASE_URL string
 }
 
 // Load loads configuration from environment variables and .env file
@@ -20,9 +22,11 @@ func Load() *Config {
 	_ = godotenv.Load()
 
 	return &Config{
-		OpenAIAPIKey: getEnv("OPENAI_API_KEY", ""),
-		Port:         getEnv("PORT", "8080"),
-		Environment:  getEnv("ENVIRONMENT", "development"),
+		OpenAIAPIKey:    getEnv("OPENAI_API_KEY", ""),
+		Port:            getEnv("PORT", "8080"),
+		Environment:     getEnv("ENVIRONMENT", "development"),
+		DMR_BASE_URL:    getEnv("DMR_BASE_URL", "http://localhost:12434/engines/v1"),
+		OLLAMA_BASE_URL: getEnv("OLLAMA_BASE_URL", "http://localhost:11434/v1"),
 	}
 }
 

@@ -22,7 +22,7 @@ func main() {
 	// Initialize services
 	productService := services.NewProductService()
 	cartService := services.NewCartService(productService)
-	aiService := services.NewAIService(cfg.OpenAIAPIKey, productService, cartService)
+	aiService := services.NewAIService(cfg.OpenAIAPIKey, productService, cartService, cfg.DMR_BASE_URL, cfg.OLLAMA_BASE_URL)
 
 	// Initialize handlers
 	chatHandler := handlers.NewChatHandler(aiService, productService, cartService)
@@ -76,5 +76,8 @@ func setupRoutes(router *gin.Engine, chatHandler *handlers.ChatHandler, staticHa
 
 		// Product endpoints
 		api.GET("/products/search", chatHandler.SearchProducts)
+
+		// AI Model endpoints
+		api.GET("/models/dmr", chatHandler.GetDMRModels)
 	}
 }

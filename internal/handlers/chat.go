@@ -211,6 +211,17 @@ func (h *ChatHandler) Checkout(c *gin.Context) {
 	c.JSON(http.StatusOK, checkoutResult)
 }
 
+// GetDMRModels handles requests to get available DMR models
+func (h *ChatHandler) GetDMRModels(c *gin.Context) {
+	models, err := h.aiService.GetDMRModels(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch DMR models"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"models": models})
+}
+
 // Helper methods
 
 func (h *ChatHandler) getOrCreateSession(sessionID string) *models.ChatSession {

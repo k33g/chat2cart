@@ -70,6 +70,7 @@ class Chat2Cart {
     }
 
     async sendNonStreaming(message) {
+
         try {
             const response = await fetch('/api/v1/chat/message', {
                 method: 'POST',
@@ -81,7 +82,7 @@ class Chat2Cart {
                     session_id: this.sessionId,
                     settings: {
                         model: modelSelect.value,
-                        api_base_url: apiBaseUrl.value
+                        provider: provider.value
                     }
                 })
             });
@@ -466,17 +467,17 @@ window.addEventListener('offline', () => {
 // Settings configuration
 let currentSettings = {
     model: 'gpt-4',
-    apiBaseUrl: 'https://api.openai.com/v1'
+    provider: 'openai'  // Changed to use the new mapping key
 };
 
 // Available models for each provider
 const providerModels = {
-    'https://api.openai.com/v1': [
+    ['openai']: [
         { id: 'gpt-4', name: 'GPT-4' },
         { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo' }
     ],
-    'http://localhost:11434/v1': [], // Will be populated dynamically
-    'http://localhost:12434/engines/v1': []  // Will be populated dynamically
+    ['ollama']: [], // Will be populated dynamically
+    ['dmr']: []  // Will be populated dynamically
 };
 
 // DOM Elements for settings
@@ -484,7 +485,7 @@ const settingsBtn = document.getElementById('settingsBtn');
 const settingsModal = document.getElementById('settingsModal');
 const closeBtn = document.querySelector('.close-btn');
 const modelSelect = document.getElementById('modelSelect');
-const apiBaseUrl = document.getElementById('apiBaseUrl');
+const provider = document.getElementById('provider');
 const saveSettings = document.getElementById('saveSettings');
 
 // Load settings from localStorage
@@ -492,45 +493,56 @@ function loadSettings() {
     const savedSettings = localStorage.getItem('chat2cartSettings');
     if (savedSettings) {
         currentSettings = JSON.parse(savedSettings);
-        apiBaseUrl.value = currentSettings.apiBaseUrl;
-        updateModelSelector(currentSettings.apiBaseUrl);
+        provider.value = currentSettings.provider;
+        updateModelSelector(currentSettings.provider);
         modelSelect.value = currentSettings.model;
     } else {
-        apiBaseUrl.value = currentSettings.apiBaseUrl;
-        updateModelSelector(currentSettings.apiBaseUrl);
+        provider.value = currentSettings.provider;
+        updateModelSelector(currentSettings.provider);
         modelSelect.value = currentSettings.model;
     }
 }
 
 // Update model selector based on selected API provider
-async function updateModelSelector(apiBaseUrl) {
+async function updateModelSelector(provider) {
     // Clear current options
     modelSelect.innerHTML = '';
     
     // Get models for the selected provider
-    let models = providerModels[apiBaseUrl];
-    
+    let models = providerModels[provider];
+
     // If it's Ollama or DMR, fetch available models
-    if (apiBaseUrl === 'http://localhost:11434/v1' || apiBaseUrl === 'http://localhost:12434/engines/v1') {
+    if (provider === 'ollama' || provider === 'dmr') {
         try {
-            // Use different endpoints for Ollama and DMR
-            const endpoint = apiBaseUrl === 'http://localhost:11434/v1' 
-                ? 'http://localhost:11434/v1/models'
-                : 'http://localhost:12434/engines/v1/models';
-                
-            const response = await fetch(endpoint);
-            if (response.ok) {
-                const data = await response.json();
-                models = data.data.map(model => ({
-                    id: model.id,
-                    name: model.id // Use the model ID as the display name
-                }));
-                // Cache the models
-                providerModels[apiBaseUrl] = models;
+            let endpoint;
+            if (provider === 'dmr') {
+                // Use backend endpoint for DMR models
+                endpoint = '/api/v1/models/dmr';
+                const response = await fetch(endpoint);
+                if (response.ok) {
+                    const data = await response.json();
+                    models = data.models.map(model => ({
+                        id: model.id,
+                        name: model.id // Use the model ID as the display name
+                    }));
+                }
+            } else {
+                // Use direct endpoint for Ollama
+                endpoint = `http://localhost:11434/v1/models`;
+                const response = await fetch(endpoint);
+                if (response.ok) {
+                    const data = await response.json();
+                    models = data.data.map(model => ({
+                        id: model.id,
+                        name: model.id // Use the model ID as the display name
+                    }));
+                }
             }
+            // Cache the models
+            providerModels[provider] = models;
         } catch (error) {
-            console.error(`Error fetching models from ${apiBaseUrl}:`, error);
-            window.chat.showToast(`Failed to fetch available models from ${apiBaseUrl === 'http://localhost:11434/v1' ? 'Ollama' : 'DMR'}`, 'error');
+            console.error(`Error fetching models from ${provider}:`, error);
+            window.chat.showToast(`Failed to fetch available models from ${provider === 'ollama' ? 'Ollama' : 'DMR'}`, 'error');
         }
     }
     
@@ -553,7 +565,7 @@ async function updateModelSelector(apiBaseUrl) {
 function saveSettingsToStorage() {
     currentSettings = {
         model: modelSelect.value,
-        apiBaseUrl: apiBaseUrl.value
+        provider: provider.value
     };
     localStorage.setItem('chat2cartSettings', JSON.stringify(currentSettings));
     window.chat.showToast('Settings saved successfully!', 'success');
@@ -575,8 +587,8 @@ window.addEventListener('click', (event) => {
 });
 
 // Update model selector when API provider changes
-apiBaseUrl.addEventListener('change', () => {
-    updateModelSelector(apiBaseUrl.value);
+provider.addEventListener('change', () => {
+    updateModelSelector(provider.value);
 });
 
 saveSettings.addEventListener('click', () => {
@@ -586,52 +598,3 @@ saveSettings.addEventListener('click', () => {
 
 // Load settings when page loads
 loadSettings();
-
-// Modify the sendMessage function to include settings
-async function sendMessage() {
-    const messageInput = document.getElementById('messageInput');
-    const message = messageInput.value.trim();
-    
-    if (!message) return;
-    
-    // Add user message to chat
-    addMessageToChat('user', message);
-    messageInput.value = '';
-    
-    // Show loading indicator
-    document.getElementById('loadingIndicator').style.display = 'flex';
-    
-    try {
-        const response = await fetch('/api/chat', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                message: message,
-                session_id: sessionId,
-                settings: currentSettings
-            }),
-        });
-        
-        if (!response.ok) {
-            throw new Error('Failed to send message');
-        }
-        
-        const data = await response.json();
-        
-        // Add assistant message to chat
-        addMessageToChat('assistant', data.message);
-        
-        // Update cart if there's a cart summary
-        if (data.cart_summary) {
-            updateCart(data.cart_summary);
-        }
-        
-    } catch (error) {
-        console.error('Error:', error);
-        showToast('Error sending message. Please try again.');
-    } finally {
-        document.getElementById('loadingIndicator').style.display = 'none';
-    }
-}

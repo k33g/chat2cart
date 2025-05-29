@@ -24,7 +24,9 @@ type AIService struct {
 	productService *ProductService
 	cartService    *CartService
 	defaultModel   string
-	defaultBaseURL string
+	openaiBaseURL  string
+	dmrBaseURL     string
+	ollamaBaseURL  string
 	apiKey         string
 }
 
@@ -76,7 +78,7 @@ func Logger(req *http.Request, next option.MiddlewareNext) (res *http.Response, 
 }
 
 // NewAIService creates a new AI service
-func NewAIService(apiKey string, productService *ProductService, cartService *CartService) *AIService {
+func NewAIService(apiKey string, productService *ProductService, cartService *CartService, dmrBaseURL string, ollamaBaseURL string) *AIService {
 	client := openai.NewClient(
 		option.WithAPIKey(apiKey),
 		option.WithMiddleware(Logger),
@@ -87,13 +89,15 @@ func NewAIService(apiKey string, productService *ProductService, cartService *Ca
 		productService: productService,
 		cartService:    cartService,
 		defaultModel:   "gpt-4",
-		defaultBaseURL: "https://api.openai.com/v1",
+		openaiBaseURL:  "https://api.openai.com/v1",
+		dmrBaseURL:     dmrBaseURL,
+		ollamaBaseURL:  ollamaBaseURL,
 		apiKey:         apiKey,
 	}
 }
 
 // ProcessChatMessage processes a chat message and returns a response
-func (ai *AIService) ProcessChatMessage(ctx context.Context, sessionID string, session *models.ChatSession, settings *models.OpenAISettings) (*models.ChatResponse, error) {
+func (ai *AIService) ProcessChatMessage(ctx context.Context, sessionID string, session *models.ChatSession, settings *models.Settings) (*models.ChatResponse, error) {
 	// Define the tools available to the AI
 	tools := ai.getToolDefinitions()
 
@@ -110,13 +114,19 @@ func (ai *AIService) ProcessChatMessage(ctx context.Context, sessionID string, s
 
 	// Use provided settings or defaults
 	model := ai.defaultModel
-	baseURL := ai.defaultBaseURL
+	baseURL := ai.openaiBaseURL
 	if settings != nil {
 		if settings.Model != "" {
 			model = settings.Model
 		}
-		if settings.APIBaseURL != "" {
-			baseURL = settings.APIBaseURL
+		if settings.Provider != "" {
+			provider := settings.Provider
+			if provider == "dmr" {
+				baseURL = ai.dmrBaseURL
+			} else if provider == "ollama" {
+				baseURL = ai.ollamaBaseURL
+			}
+
 			// Create a new client with the custom base URL
 			client := openai.NewClient(
 				option.WithAPIKey(ai.apiKey),
@@ -130,7 +140,7 @@ func (ai *AIService) ProcessChatMessage(ctx context.Context, sessionID string, s
 	for currentIteration < maxIterations {
 		// Create the chat completion request
 		completion, err := ai.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
-			Model:       openai.ChatModel(model),
+			Model:       model,
 			Messages:    messages,
 			Tools:       tools,
 			Temperature: param.Opt[float64]{Value: 0.00000000000001},
@@ -582,4 +592,57 @@ func (ai *AIService) buildMessagesFromSession(session *models.ChatSession) []ope
 	}
 
 	return messages
+}
+
+// GetDMRModels fetches available models from the DMR API
+func (ai *AIService) GetDMRModels(ctx context.Context) ([]models.AIModel, error) {
+	// Create a new HTTP client
+	client := &http.Client{}
+
+	// Create the request
+	req, err := http.NewRequestWithContext(ctx, "GET", ai.dmrBaseURL+"/models", nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// Send the request
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch DMR models: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Check response status
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("DMR API returned non-200 status code: %d", resp.StatusCode)
+	}
+
+	// Parse the response
+	var result struct {
+		Object string `json:"object"`
+		Data   []struct {
+			ID      string `json:"id"`
+			Object  string `json:"object"`
+			Created int64  `json:"created"`
+			OwnedBy string `json:"owned_by"`
+		} `json:"data"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode DMR models response: %w", err)
+	}
+
+	// Convert to our model format
+	aiModels := make([]models.AIModel, len(result.Data))
+	for i, model := range result.Data {
+		aiModels[i] = models.AIModel{
+			ID:      model.ID,
+			Name:    model.ID, // Using ID as name since that's what we want to display
+			Object:  model.Object,
+			Created: model.Created,
+			OwnedBy: model.OwnedBy,
+		}
+	}
+
+	return aiModels, nil
 }

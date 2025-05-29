@@ -75,15 +75,14 @@ func (cs *ChatSession) GetMessageCount() int {
 
 // ChatRequest represents an incoming chat request
 type ChatRequest struct {
-	Message   string          `json:"message" binding:"required"`
-	SessionID string          `json:"session_id"`
-	Settings  *OpenAISettings `json:"settings,omitempty"`
+	Message   string    `json:"message" binding:"required"`
+	SessionID string    `json:"session_id"`
+	Settings  *Settings `json:"settings,omitempty"`
 }
 
-// OpenAISettings represents OpenAI configuration settings
-type OpenAISettings struct {
-	Model      string `json:"model"`
-	APIBaseURL string `json:"api_base_url"`
+type Settings struct {
+	Model    string `json:"model"`
+	Provider string `json:"provider"`
 }
 
 // ChatResponse represents a chat response
