@@ -2,6 +2,12 @@
 
 **chat2cart** is an AI-powered shopping assistant that lets users interact via chat to build, modify, and check out a shopping cart. Through a natural conversation, users can discover products, add or remove items, and complete or cancel their purchase—all from the chat interface.
 
+## Running the application
+
+```bash
+docker compose up --build
+```
+
 ## 🚀 Features
 
 - 💬 **Natural Language Shopping**: Chat with AI to find and purchase products
