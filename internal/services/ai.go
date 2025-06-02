@@ -109,7 +109,7 @@ func (ai *AIService) ProcessChatMessage(ctx context.Context, sessionID string, s
 	var responseMessage string
 
 	// Maximum number of tool call iterations
-	maxIterations := 5
+	maxIterations := 1
 	currentIteration := 0
 
 	// Use provided settings or defaults
@@ -142,8 +142,9 @@ func (ai *AIService) ProcessChatMessage(ctx context.Context, sessionID string, s
 		completion, err := ai.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
 			Model:       model,
 			Messages:    messages,
+			ParallelToolCalls: openai.Bool(true),
 			Tools:       tools,
-			Temperature: param.Opt[float64]{Value: 0.00000000000001},
+			Temperature:       openai.Opt(0.0),
 		})
 
 		if err != nil {
@@ -189,7 +190,7 @@ func (ai *AIService) ProcessChatMessage(ctx context.Context, sessionID string, s
 
 	// If we hit the maximum iterations, add a warning message
 	if currentIteration >= maxIterations {
-		responseMessage = "I've reached the maximum number of operations I can perform. Let me know if you need anything else!"
+		responseMessage = "Let me know if you need anything else!"
 	}
 
 	// Get the final cart summary after all tool executions
