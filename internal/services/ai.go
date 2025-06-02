@@ -242,7 +242,7 @@ func (ai *AIService) getToolDefinitions() []openai.ChatCompletionToolParam {
 			Type: "function",
 			Function: openai.FunctionDefinitionParam{
 				Name:        "add_to_cart",
-				Description: openai.String("Add a product to the shopping cart"),
+				Description: openai.String("Add a quantity of a product to the shopping cart"),
 				Parameters: openai.FunctionParameters{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -255,7 +255,7 @@ func (ai *AIService) getToolDefinitions() []openai.ChatCompletionToolParam {
 							"description": "Quantity to add (default: 1)",
 						},
 					},
-					"required": []string{"product_name"},
+					"required": []string{"product_name", "quantity"},
 				},
 			},
 		},
