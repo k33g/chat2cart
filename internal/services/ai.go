@@ -15,7 +15,6 @@ import (
 
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
-	"github.com/openai/openai-go/packages/param"
 )
 
 // AIService handles AI interactions with OpenAI
@@ -140,10 +139,10 @@ func (ai *AIService) ProcessChatMessage(ctx context.Context, sessionID string, s
 	for currentIteration < maxIterations {
 		// Create the chat completion request
 		completion, err := ai.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
-			Model:       model,
-			Messages:    messages,
+			Model:             model,
+			Messages:          messages,
 			ParallelToolCalls: openai.Bool(true),
-			Tools:       tools,
+			Tools:             tools,
 			Temperature:       openai.Opt(0.0),
 		})
 
